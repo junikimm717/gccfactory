@@ -159,12 +159,28 @@ func (g *Global) flagSet(name string) *flag.FlagSet {
 	return fs
 }
 
+// A single fs.Parse stops at the first positional, silently dropping flags
+// after it; re-parsing past each one keeps `logs <slug> --failed` working.
 func parse(fs *flag.FlagSet, args []string) error {
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return errHelpRequested
+	var positional []string
+	rest := args
+	for {
+		if err := fs.Parse(rest); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return errHelpRequested
+			}
+			return usagef("%v", err)
 		}
-		return usagef("%v", err)
+		if fs.NArg() == 0 {
+			break
+		}
+		positional = append(positional, fs.Arg(0))
+		rest = fs.Args()[1:]
+	}
+	if len(positional) > 0 {
+		if err := fs.Parse(positional); err != nil {
+			return usagef("%v", err)
+		}
 	}
 	return nil
 }
