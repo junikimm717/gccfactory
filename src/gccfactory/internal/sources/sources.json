@@ -17,8 +17,8 @@
     "version": "3d5db9ebe860",
     "file": "config.sub",
     "urls": [
+      "https://git.savannah.gnu.org/cgit/config.git/plain/config.sub?id=3d5db9ebe860",
       "https://gitweb.git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=3d5db9ebe860",
-      "https://cgit.git.savannah.gnu.org/cgit/config.git/plain/config.sub?id=3d5db9ebe860",
       "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=3d5db9ebe860"
     ],
     "sha256": "75d5d255a2a273b6e651f82eecfabf6cbcd8eaeae70e86b417384c8f4a58d8d3",

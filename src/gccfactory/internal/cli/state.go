@@ -11,29 +11,18 @@ import (
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/core"
 )
 
-// Stale files (dead pid, not refreshed) are dropped, so callers can treat
-// presence as "somebody is building this right now".
-func readHeartbeats(e *core.Env) map[string]*core.Heartbeat {
-	out := map[string]*core.Heartbeat{}
-	ents, err := os.ReadDir(filepath.Join(e.Dist, core.DirState, "heartbeats"))
-	if err != nil {
-		return out
+// Looked up by name, never by listing the directory: heartbeats are published
+// with rename(), and a concurrent readdir can miss an entry that open() still
+// resolves -- which rendered live jobs as "failed".
+func liveHeartbeat(e *core.Env, slug string) *core.Heartbeat {
+	h, err := core.ReadHeartbeat(e, slug)
+	if err != nil || !h.Live() {
+		return nil
 	}
-	for _, ent := range ents {
-		if ent.IsDir() || !strings.HasSuffix(ent.Name(), ".json") {
-			continue
-		}
-		slug := strings.TrimSuffix(ent.Name(), ".json")
-		h, err := core.ReadHeartbeat(e, slug)
-		if err != nil || !h.Live() {
-			continue
-		}
-		if h.Slug == "" {
-			h.Slug = slug
-		}
-		out[h.Slug] = h
+	if h.Slug == "" {
+		h.Slug = slug
 	}
-	return out
+	return h
 }
 
 func who(h *core.Heartbeat) string {

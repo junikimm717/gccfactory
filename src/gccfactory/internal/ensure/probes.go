@@ -92,6 +92,9 @@ func atomicsNeedLibatomic(t triple.Triple) []string {
 // a false failure blocking the build.
 func staticPIESkip(t triple.Triple) string {
 	switch t.Raw {
+	case "":
+		// Native: the build machine's libc, which we neither ship nor control.
+		return "native host may not ship a static libc (Fedora splits it into glibc-static)"
 	case "arm-linux-musleabi", "arm-linux-musleabihf":
 		return "gcc has no -static-pie support for arm (PR 106356)"
 	case "mips64-linux-musl":

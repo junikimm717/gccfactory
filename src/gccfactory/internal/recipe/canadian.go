@@ -289,8 +289,7 @@ func (b *builder) prepareBuildSysroot(ctx context.Context) error {
 	return b.scratchSysrootLinks(ctx, "prepare-build-sysroot-links", bs)
 }
 
-// gccHostStage walks the fallback ladder, returning the rung that worked. Each
-// rung reconfigures from scratch, because a gcc object tree cannot be
+// Each rung reconfigures from scratch, because a gcc object tree cannot be
 // meaningfully reconfigured in place.
 func (b *builder) gccHostStage(ctx context.Context, env map[string]string) (rung, error) {
 	var errs []string

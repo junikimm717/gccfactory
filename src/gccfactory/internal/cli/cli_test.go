@@ -11,8 +11,7 @@ import (
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
-// withPipedStdin makes stdin definitively not a terminal for the duration of a
-// test. /dev/null would not do: it is a character device.
+// /dev/null would not do here: it is a character device, not a pipe.
 func withPipedStdin(t *testing.T) {
 	t.Helper()
 	r, w, err := os.Pipe()

@@ -127,8 +127,6 @@ func (h *harness) preflightCompile(ctx context.Context) bool {
 	return true
 }
 
-// runAll executes the whole suite: every probe, at every optimisation level,
-// in every link mode the probe allows.
 func (h *harness) runAll(ctx context.Context, t triple.Triple) {
 	// The gcc-ar/-flto path first: it is one cell and it explains a whole
 	// class of matrix failures.

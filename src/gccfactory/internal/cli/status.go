@@ -58,8 +58,6 @@ func runStatus(g *Global, args []string) error {
 	if err != nil {
 		return err
 	}
-	hb := readHeartbeats(e)
-
 	type row struct {
 		node  core.PlanNode
 		state string
@@ -73,7 +71,7 @@ func runStatus(g *Global, args []string) error {
 		} else if _, exists := artifactManifest(n.Job.ArtifactDir(e)); exists {
 			st = "stale"
 		}
-		if _, ok := hb[n.Job.Slug()]; ok {
+		if liveHeartbeat(e, n.Job.Slug()) != nil {
 			st = "building"
 		}
 		switch st {
@@ -113,7 +111,7 @@ func runStatus(g *Global, args []string) error {
 				by = m.BuiltBy
 			}
 		}
-		if h, ok := hb[n.Job.Slug()]; ok {
+		if h := liveHeartbeat(e, n.Job.Slug()); h != nil {
 			by = who(h)
 			built = h.Step
 			if built == "" {

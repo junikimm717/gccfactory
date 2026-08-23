@@ -110,7 +110,6 @@ func (p *progress) refresh(initial bool) {
 	if err != nil {
 		return
 	}
-	hb := readHeartbeats(p.e)
 
 	p.mu.Lock()
 	for _, n := range nodes {
@@ -133,7 +132,7 @@ func (p *progress) refresh(initial bool) {
 				s.elapsed = time.Since(s.since)
 			}
 		case !n.Valid:
-			if h, building := hb[slug]; building {
+			if h := liveHeartbeat(p.e, slug); h != nil {
 				s.state = stBuilding
 				s.step = h.Step
 				s.who = who(h)
@@ -215,8 +214,6 @@ func (p *progress) emit(lines []string) {
 	fmt.Fprint(p.out, b.String())
 }
 
-// condense keeps the interesting rows (anything not finished) when the job list
-// is taller than the terminal.
 func condense(lines []string, max int) []string {
 	var keep []string
 	hidden := 0

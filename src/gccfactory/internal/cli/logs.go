@@ -109,8 +109,6 @@ func runLogs(g *Global, args []string) error {
 	}
 }
 
-// latestAttempt handles both log layouts: a flat <slug>/NNN-step.log tree, and
-// a per-attempt <slug>/<stamp>/NNN-step.log tree with a `latest` symlink.
 func latestAttempt(base string) (string, error) {
 	if fi, err := os.Stat(filepath.Join(base, "latest")); err == nil && fi.IsDir() {
 		return filepath.Join(base, "latest"), nil
@@ -236,8 +234,6 @@ func printLog(path string, n int) {
 	}
 }
 
-// followLogs tails the newest log in dir and rolls onto later steps as the
-// build creates them.
 func followLogs(dir string) error {
 	var (
 		cur string
@@ -253,7 +249,7 @@ func followLogs(dir string) error {
 		logs, _ := listLogs(dir)
 		if len(logs) > 0 && logs[len(logs)-1] != cur {
 			if f != nil {
-				_, _ = io.Copy(os.Stdout, f) // drain the step we're leaving
+				_, _ = io.Copy(os.Stdout, f)
 				f.Close()
 			}
 			cur = logs[len(logs)-1]
