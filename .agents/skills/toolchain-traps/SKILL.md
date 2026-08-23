@@ -475,18 +475,35 @@ check exists to catch, so the check keeps its teeth for everything else.
 directory checks is that a BUILD-arch binary must never survive into a HOST
 toolchain; only the `#!` case is genuinely architecture-free.
 
-## Two tests fail on a Fedora host and both are the environment
+## `verify` fails on a stock Fedora box with `cannot find -lc`
 
-Neither indicates a broken build system; both pass in the debian container.
+`./src/gccf verify` on a fresh clone reports a failed `probe:static-pie` for
+the **native** toolchain. `--native` is implied when nothing is built yet, so
+this is the first command a new user types.
 
-- `TestNativeToolchainRunsProbes` — the native `-static-pie` probe fails with
-  `cannot find -lc`. Fedora does not install `glibc-static` by default. Only
-  the *native* probe needs it; every target toolchain builds its own static
-  musl, so the matrix is unaffected.
-- `TestQemuPathAcceptsDirOrTemplate` — expects `/usr/bin/qemu-ppc64le-static`,
-  gets `/usr/bin/qemu-ppc64le`. `ensure.QemuFor` returns whichever binary
-  exists, and Fedora ships both the static and dynamic variants where debian
-  ships only the static one. Verification still resolves qemu correctly.
+**Cause — and it is not the toolchain.** `NativeToolchain` probes the *build
+machine's* `cc`/`c++`, i.e. the distro's glibc gcc. `-static-pie` needs
+glibc's `libc.a`, which debian bundles into `libc6-dev` but Fedora splits into
+the optional `glibc-static`. Nothing we ship is involved: our host tools are
+`-static` (never static-PIE), and target static-pie works off musl's own
+`-fPIC` `libc.a`.
+
+The mechanism was that `staticPIESkip` switches on `t.Raw` while the native
+path calls `runAll(ctx, triple.Triple{})` — the **zero Triple**. The skip table
+was written for targets, so `""` matched nothing and the probe ran anyway.
+Fixed with a `case ""` returning a named skip.
+
+**Generalise:** any per-target policy keyed on `t.Raw` must decide what the
+zero Triple means, because the native caller passes exactly that. Check the
+native path when adding one.
+
+## `TestQemuPathAcceptsDirOrTemplate` fails on Fedora
+
+Expects `/usr/bin/qemu-ppc64le-static`, gets `/usr/bin/qemu-ppc64le`.
+`ensure.QemuFor` returns whichever binary exists, and Fedora ships both the
+static and dynamic variants where debian ships only the static one. The test
+hardcodes the debian assumption. Verification itself resolves qemu correctly
+on both.
 
 ## Verifying you actually have a canadian toolchain
 
