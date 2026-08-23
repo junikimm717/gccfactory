@@ -123,6 +123,38 @@ while sleep 10; do ps -o rss=,comm= -e | sort -rn | head -3; done
 Take the peak RSS of one job, add headroom, divide into RAM. Then raise
 `--workers` until wall-clock stops improving.
 
+## Splitting a matrix build across processes
+
+One `build` invocation aborts the whole batch on the first job failure, and
+every in-flight job's work is discarded with it. On a full 22-cell run that is
+expensive — two separate failures cost ~5 minutes of six concurrent gcc builds
+each. Running several processes over disjoint target sets gives failure
+isolation for free (dist/ is race-safe by design), so one bad target kills one
+group instead of the matrix.
+
+**But do not partition into fixed groups and walk away.** Worker slots are
+per-process, so when a group finishes its slots vanish and total parallelism
+*decays* as the run proceeds — measured on a 24-core box, utilisation fell to
+**44% idle** once the first of four groups completed, with only 4 jobs building
+and 24 GB of RAM untouched.
+
+The shape that holds utilisation flat is a **sweep**: one extra process with a
+high `--workers` over `--target all`, which picks up whatever job is unclaimed
+anywhere in the matrix. Leases make overlap safe — a job already being built by
+another process simply blocks that worker, and everything else keeps flowing.
+Adding one restored the same box to **0.5% idle** (load 24.9, 18 compilers).
+
+Two lessons worth keeping:
+
+- **Re-measure after the shape of the work changes**, not just at launch. The
+  DAG is dependency-shaped: early on almost everything waits on `cross_<T>`,
+  and late on the `canadian_*` cells fan out. A sizing that saturates at one
+  phase idles at another.
+- **Memory is the stated constraint, but verify which one is actually binding.**
+  Budgeting ~2.5 GB/job when the real figure was ~1.2 GB at `-j3` left half the
+  machine unused. Once CPU sits near 0% idle, stop — more workers past that
+  only add context switching, and RAM headroom is not a reason to add them.
+
 ## How verification works
 
 `internal/ensure` is the answer to "did we actually build a working compiler,

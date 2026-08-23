@@ -3,6 +3,7 @@ package ensure
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -547,23 +548,26 @@ func toolDirPresence(rep *Report, dir string) bool {
 // reference.
 func elfDirReport(subject, checkName, dir, want string, check func(string) error) *Report {
 	rep := NewReport(subject)
-	n, bad := scanDir(dir, check)
+	n, scripts, bad := scanDir(dir, check)
 	switch {
 	case len(bad) > 0:
 		rep.Failf(checkName, "%d of %d files in %s are not %s:\n%s",
 			len(bad), n, dir, want, strings.Join(bad, "\n"))
 	case n == 0:
 		rep.Failf(checkName, "%s is empty", dir)
+	case len(scripts) > 0:
+		rep.Pass(checkName, "%d binaries are %s (%d arch-neutral script(s): %s)",
+			n-len(scripts), want, len(scripts), strings.Join(scripts, ", "))
 	default:
 		rep.Pass(checkName, "%d binaries are %s", n, want)
 	}
 	return rep
 }
 
-func scanDir(dir string, check func(string) error) (n int, bad []string) {
+func scanDir(dir string, check func(string) error) (n int, scripts []string, bad []string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return 0, []string{fmt.Sprintf("  %s: %v", dir, err)}
+		return 0, nil, []string{fmt.Sprintf("  %s: %v", dir, err)}
 	}
 	for _, e := range entries {
 		p := filepath.Join(dir, e.Name())
@@ -576,11 +580,30 @@ func scanDir(dir string, check func(string) error) (n int, bad []string) {
 			continue
 		}
 		n++
+		// binutils installs embedspu as /bin/sh for powerpc. A script has no
+		// architecture, so it can never be a wrong-arch binary.
+		if isScript(p) {
+			scripts = append(scripts, e.Name())
+			continue
+		}
 		if err := check(p); err != nil {
 			bad = append(bad, "  "+err.Error())
 		}
 	}
-	return n, bad
+	return n, scripts, bad
+}
+
+func isScript(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var magic [2]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return false
+	}
+	return magic[0] == '#' && magic[1] == '!'
 }
 
 func failed(rep *Report, name string) bool {

@@ -105,10 +105,17 @@ func commonConfig(c buildCfg) []string {
 		// As configure *arguments*, not just environment: autoconf caches
 		// precious variables and forwards them to every sub-configure, which
 		// an exported CC does not reliably reach. This is mcm's COMMON_CONFIG.
-		f = append(f, "CC="+hostCC(c.Host), "CXX="+hostCXX(c.Host))
+		f = append(f, "CC="+hostCC(c.Host), "CXX="+hostCXX(c.Host), "CXX_FOR_BUILD="+buildCXX())
+	} else {
+		f = append(f, "CXX="+buildCXX())
 	}
 	return f
 }
+
+// gcc 14.2's libcody predates char8_t, so a build g++ defaulting to C++20 or
+// later (gcc 15+) fails on its u8 literals. CXX, never CXXFLAGS: CXXFLAGS
+// propagates into CXXFLAGS_FOR_TARGET and would pin the target libraries too.
+func buildCXX() string { return "g++ -std=gnu++17" }
 
 // binutilsConfig is mcm's FULL_BINUTILS_CONFIG plus the explicit feature
 // switches we need for build/host parity (see RECIPES "Notes / gotchas").

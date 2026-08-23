@@ -12,11 +12,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
 
 const attemptsPerURL = 3
+
+// A mirror that accepts the connection and then goes silent would otherwise
+// hang forever: ResponseHeaderTimeout covers the headers, nothing covers the
+// body. config.sub is a dependency of every srctree, so one stalled mirror can
+// stall the whole build.
+const stallTimeout = 90 * time.Second
 
 func backoff(attempt int) time.Duration { return time.Duration(1<<attempt) * time.Second }
 
@@ -137,6 +144,8 @@ func (e *ChecksumError) Error() string {
 }
 
 func download(ctx context.Context, url, dst string, s Source) (err error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -168,7 +177,14 @@ func download(ctx context.Context, url, dst string, s Source) (err error) {
 	}()
 
 	h := sha256.New()
-	if _, err = io.Copy(io.MultiWriter(tmp, h), resp.Body); err != nil {
+	var stalled atomic.Bool
+	timer := time.AfterFunc(stallTimeout, func() { stalled.Store(true); cancel() })
+	defer timer.Stop()
+	body := &stallReader{r: resp.Body, timer: timer}
+	if _, err = io.Copy(io.MultiWriter(tmp, h), body); err != nil {
+		if stalled.Load() {
+			return fmt.Errorf("stalled: no data for %s", stallTimeout)
+		}
 		return fmt.Errorf("reading body: %w", err)
 	}
 	if err = tmp.Sync(); err != nil {
@@ -247,4 +263,20 @@ func lockExclusive(ctx context.Context, path string) (func(), error) {
 		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		f.Close()
 	}, nil
+}
+
+// stallReader restarts the stall timer on every successful read, so the
+// deadline measures silence rather than total transfer time -- a slow mirror
+// serving a 90 MB tarball is fine, a mute one is not.
+type stallReader struct {
+	r     io.Reader
+	timer *time.Timer
+}
+
+func (s *stallReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 {
+		s.timer.Reset(stallTimeout)
+	}
+	return n, err
 }

@@ -423,6 +423,71 @@ level and foreign-binary exec works, including **nested** exec (a HOST-arch gcc
 under `qemu-<host>` forking HOST-arch `cc1`/`as`/`ld`). Verify with a real
 foreign binary; do not conclude from the missing mount that it's unavailable.
 
+## `libcody`: `no matching function for call to 'S2C(const char8_t [2])'`
+
+Every `cross_<T>` job dies in `gcc-all-gcc` compiling `libcody/buffer.cc` and
+`cody.hh`, with dozens of near-identical errors naming `char8_t`.
+
+**Cause.** The *build machine's* g++ is GCC 15 or newer, whose default C++
+standard is C++20 or later. In C++20 `u8"..."` has type `const char8_t[]`, and
+gcc 14.2's libcody only declares `S2C(const char *)`. This has nothing to do
+with the target triple: every target fails identically, so whichever one is
+scheduled first is the one you see in the error. Do not go looking for an
+arch-specific cause.
+
+**Fix.** Pin the standard the *build* compiler uses, in `CXX` — **not**
+`CXXFLAGS`. `CXXFLAGS` propagates into `CXXFLAGS_FOR_TARGET` and would pin the
+target libraries too (see the static-linking trap above; `CXX` does not
+propagate). `commonConfig` in `internal/recipe/config.go` passes
+`CXX=g++ -std=gnu++17` for cross jobs, and `CXX_FOR_BUILD=` likewise for
+canadian ones — a canadian job's `CXX` is our own gcc 14.2, which already
+defaults to gnu++17, but its build-side generator programs still use the build
+machine's compiler.
+
+**Diagnose in 5 seconds, not in a 10-minute rebuild.** The srctree is already
+published, so compile the one file by hand:
+
+```sh
+cd dist/srctrees/gcc-14.2.0/tree/libcody
+g++ -c buffer.cc -I. -o /tmp/x.o                  # reproduces the failure
+g++ -std=gnu++17 -c buffer.cc -I. -o /tmp/x.o     # proves the fix
+```
+
+**Generalise:** gcc 14.2 was written against a gnu++17-default world. When the
+host compiler is far newer than the gcc being built, suspect a default-standard
+change before suspecting the recipe.
+
+## `bin-elf` fails: `<T>-embedspu` is "not an ELF file (starts with "#! /bin/sh")"
+
+Only on powerpc targets. A `cross_powerpc64*` toolchain builds cleanly and then
+fails its own verification with `1 of 30 files in .../bin are not BUILD ELFs`.
+
+**Cause.** Not a broken toolchain — binutils genuinely installs `embedspu` as a
+`/bin/sh` script for powerpc. The old `bin-elf` check required *every* file in
+`<prefix>/bin` to be an ELF for the machine the tools run on.
+
+**Fix.** `scanDir` (`internal/ensure/toolchain.go`) classifies a file starting
+with `#!` as arch-neutral: it is reported by name in the pass message but not
+ELF-checked. A script cannot be a wrong-arch binary, which is the leak the
+check exists to catch, so the check keeps its teeth for everything else.
+
+**Do not weaken this to "non-ELF files are fine".** The whole point of the
+directory checks is that a BUILD-arch binary must never survive into a HOST
+toolchain; only the `#!` case is genuinely architecture-free.
+
+## Two tests fail on a Fedora host and both are the environment
+
+Neither indicates a broken build system; both pass in the debian container.
+
+- `TestNativeToolchainRunsProbes` — the native `-static-pie` probe fails with
+  `cannot find -lc`. Fedora does not install `glibc-static` by default. Only
+  the *native* probe needs it; every target toolchain builds its own static
+  musl, so the matrix is unaffected.
+- `TestQemuPathAcceptsDirOrTemplate` — expects `/usr/bin/qemu-ppc64le-static`,
+  gets `/usr/bin/qemu-ppc64le`. `ensure.QemuFor` returns whichever binary
+  exists, and Fedora ships both the static and dynamic variants where debian
+  ships only the static one. Verification still resolves qemu correctly.
+
 ## Verifying you actually have a canadian toolchain
 
 Architecture checks alone are not sufficient — check the loader too, since a
