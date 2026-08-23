@@ -50,7 +50,6 @@ func (i ELFInfo) String() string {
 	return s
 }
 
-// ELFID formats an ELF identity triplet, e.g. "ELF64/LE/EM_X86_64(62)".
 func ELFID(class, data byte, machine uint16) string {
 	return fmt.Sprintf("%s/%s/%s(%d)", elfClassName(class), elfDataName(data), elfMachineName(machine), machine)
 }

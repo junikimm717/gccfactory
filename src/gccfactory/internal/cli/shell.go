@@ -94,8 +94,6 @@ func runShell(g *Global, args []string) error {
 	return syscall.Exec(bin, []string{filepath.Base(bin), "-i"}, full)
 }
 
-// jobEnv extracts the cwd and the env overlay recorded for a job, preferring
-// the attempt's commands.sh and falling back to a step log's header.
 func jobEnv(dir, step string) (cwd string, env map[string]string, src string, err error) {
 	if c := filepath.Join(dir, "commands.sh"); fileExists(c) {
 		cwd, env = parseRecordedEnv(c)
@@ -164,8 +162,6 @@ func parseRecordedEnv(path string) (string, map[string]string) {
 	return cwd, env
 }
 
-// resolveWorkDir picks the directory to land in and explains if it had to
-// substitute something.
 func resolveWorkDir(dist, slug, recorded string) (string, string) {
 	if recorded != "" && dirExists(recorded) {
 		return recorded, ""

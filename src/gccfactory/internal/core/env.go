@@ -60,7 +60,6 @@ func (e *Env) Path(parts ...string) string {
 	return filepath.Join(append([]string{e.Dist}, parts...)...)
 }
 
-// Workers is MaxWorkers clamped to at least 1.
 func (e *Env) Workers() int {
 	if e.MaxWorkers < 1 {
 		return 1
@@ -68,7 +67,6 @@ func (e *Env) Workers() int {
 	return e.MaxWorkers
 }
 
-// MakeJobs is the -j value for make, defaulting to the CPU count.
 func (e *Env) MakeJobs() int {
 	if e.Jobs < 1 {
 		return runtime.NumCPU()
@@ -80,7 +78,7 @@ func (e *Env) MakeJobs() int {
 // removing one would break flock identity for anyone holding it open.
 func (e *Env) LockPath(slug string) string { return e.Path(DirLocks, slug+".lock") }
 
-// JobLogDir is dist/logs/jobs/<slug>, the parent of all attempt directories.
+// JobLogDir is the parent of all attempt directories.
 func (e *Env) JobLogDir(slug string) string { return e.Path(DirLogs, "jobs", slug) }
 
 var distSubdirs = []string{

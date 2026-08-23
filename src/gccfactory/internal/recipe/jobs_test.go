@@ -10,7 +10,6 @@ import (
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
-// closure walks the whole DAG from a set of roots, returning every slug.
 func closure(roots []core.Job) map[string]core.Job {
 	out := map[string]core.Job{}
 	var visit func(core.Job)

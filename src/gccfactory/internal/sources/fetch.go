@@ -151,7 +151,7 @@ func download(ctx context.Context, url, dst string, s Source) (err error) {
 		return err
 	}
 	req.Header.Set("User-Agent", "gccfactory/1 (+sources)")
-	resp, err := client.Do(req) // http.Client follows redirects by default
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

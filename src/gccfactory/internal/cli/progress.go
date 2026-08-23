@@ -214,8 +214,6 @@ func (p *progress) emit(lines []string) {
 	fmt.Fprint(p.out, b.String())
 }
 
-// condense keeps the interesting rows (anything not finished) when the job list
-// is taller than the terminal.
 func condense(lines []string, max int) []string {
 	var keep []string
 	hidden := 0

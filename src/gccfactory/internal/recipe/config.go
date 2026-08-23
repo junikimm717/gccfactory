@@ -22,9 +22,8 @@ import (
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
-// buildCfg is the complete description of one build: which triples, which
-// directories. Every path a recipe needs is derived here rather than being
-// concatenated at the point of use.
+// Every path a recipe needs is derived here rather than being concatenated at
+// the point of use.
 type buildCfg struct {
 	Work  string // per-job scratch dir; holds src_* and obj_*
 	Stage string // per-job DESTDIR; becomes the published artifact
@@ -89,8 +88,6 @@ func (c buildCfg) ObjSysroot() string { return filepath.Join(c.Work, "obj_sysroo
 // usr/lib32/lib64 conventions obj_sysroot has.
 func (c buildCfg) BuildSysroot() string { return filepath.Join(c.Work, "obj_build_sysroot") }
 
-// StageSysroot is where the target's headers and libraries land in the
-// published artifact.
 func (c buildCfg) StageSysroot() string { return filepath.Join(c.Stage, c.Target.Raw) }
 
 // commonConfig is mcm's COMMON_CONFIG: applied to binutils and gcc alike.

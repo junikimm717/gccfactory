@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// makeTar builds <dir>/probe.tar.gz containing probe-1/{README,sub/x.c}.
 func makeTar(t *testing.T, dir string) string {
 	t.Helper()
 	if _, err := exec.LookPath("tar"); err != nil {

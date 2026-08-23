@@ -17,7 +17,6 @@ import (
 
 func sum(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
 
-// serve returns a server handing out body at /f, plus a hit counter.
 func serve(t *testing.T, body []byte) (*httptest.Server, *int32) {
 	t.Helper()
 	var hits int32

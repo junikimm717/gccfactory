@@ -46,8 +46,7 @@ func TestProbesNamed(t *testing.T) {
 	}
 }
 
-// TestProbeSourcesParse type-checks every probe source with the native
-// compiler. It is the cheap way to catch a typo without a cross toolchain.
+// It is the cheap way to catch a typo without a cross toolchain.
 func TestProbeSourcesParse(t *testing.T) {
 	cc, ccErr := exec.LookPath("cc")
 	cxx, cxxErr := exec.LookPath("c++")
@@ -75,9 +74,8 @@ func TestProbeSourcesParse(t *testing.T) {
 	}
 }
 
-// TestNativeToolchainRunsProbes drives the real entry point with a real
-// compiler: it proves the harness wiring and that every Want string is what
-// the programs actually print.
+// It proves the harness wiring and that every Want string is what the
+// programs actually print.
 func TestNativeToolchainRunsProbes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("compiles and runs the whole probe suite")

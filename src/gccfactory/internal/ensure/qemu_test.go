@@ -97,9 +97,8 @@ func TestCrossToolchainNoQemu(t *testing.T) {
 	}
 }
 
-// TestCrossToolchainMatrix drives the B->T path with the fake toolchain. The
-// BUILD-arch check is ignored because the machine running the test is not
-// necessarily the one the fake prefix pretends to be.
+// The BUILD-arch check is ignored because the machine running the test is
+// not necessarily the one the fake prefix pretends to be.
 func TestCrossToolchainMatrix(t *testing.T) {
 	host := triple.MustParse("x86_64-linux-musl")
 	target := triple.MustParse("arm-linux-musleabi")

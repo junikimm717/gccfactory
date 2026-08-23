@@ -26,12 +26,10 @@ type Heartbeat struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// HeartbeatPath is dist/state/heartbeats/<slug>.json.
 func (e *Env) HeartbeatPath(slug string) string {
 	return e.Path(DirState, "heartbeats", slug+".json")
 }
 
-// ReadHeartbeat loads the heartbeat for a slug, if any.
 func ReadHeartbeat(e *Env, slug string) (*Heartbeat, error) {
 	b, err := os.ReadFile(e.HeartbeatPath(slug))
 	if err != nil {

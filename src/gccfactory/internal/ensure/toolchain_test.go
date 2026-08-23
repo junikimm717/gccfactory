@@ -154,7 +154,6 @@ func (f *fakeRunner) Output(ctx context.Context, c Cmd) ([]byte, error) {
 	return nil, nil
 }
 
-// probeIn identifies which probe a working directory belongs to by its sources.
 func (f *fakeRunner) probeIn(dir string) (Probe, bool) {
 	for _, p := range Probes() {
 		for _, src := range p.Files {
@@ -359,7 +358,6 @@ func TestCrossToolchainDoesNotRequireMake(t *testing.T) {
 			t.Fatalf("cross toolchains must not be asked for make:\n%s", rep)
 		}
 	}
-	// ...but the canadian deliverable must have it.
 	crep := ToolSurface(f.prefix, target, UnprefixedTools...)
 	if crep.OK() || !strings.Contains(crep.Err().Error(), "missing (1): make") {
 		t.Fatalf("canadian surface must demand make:\n%s", crep)
@@ -417,7 +415,6 @@ func TestMissingToolDirAsAbortsEarly(t *testing.T) {
 		}
 	}
 
-	// The same must hold for a cross toolchain.
 	crep := CrossToolchain(context.Background(), newFakeRunner(t, f), t.TempDir(), f.prefix, target, "qemu-x86_64")
 	if !failed(crep, "tooldir-as-ld") {
 		t.Fatalf("cross must check the tooldir too:\n%s", crep)
@@ -508,7 +505,6 @@ func TestAbsoluteLoaderSymlinkIsReported(t *testing.T) {
 		t.Errorf("LoaderPath must resolve inside the sysroot, got %q", got)
 	}
 
-	// A relative link is the fix, and passes.
 	if err := os.Remove(ldso); err != nil {
 		t.Fatal(err)
 	}

@@ -138,8 +138,6 @@ func runBuild(g *Global, args []string) error {
 	return nil
 }
 
-// buildFailure turns whatever core.Run returned into the most actionable
-// message we can produce, including the exact follow-up commands.
 func buildFailure(err error) error {
 	var ce *core.CmdError
 	if !errors.As(err, &ce) {

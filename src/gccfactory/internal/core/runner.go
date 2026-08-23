@@ -51,8 +51,6 @@ type Cmd struct {
 	Name string
 }
 
-// NewRunner opens a fresh attempt directory for a job and points
-// <jobdir>/latest at it.
 func NewRunner(e *Env, slug string) (*Runner, error) {
 	base := e.JobLogDir(slug)
 	dir, err := uniqueDir(base, fmt.Sprintf("%s-%d", time.Now().UTC().Format("20060102T150405Z"), os.Getpid()))
@@ -123,7 +121,7 @@ func (r *Runner) Close() error {
 	return err
 }
 
-// Step marks a logical phase. It shows up in the heartbeat and the live UI.
+// Step shows up in the heartbeat and the live UI.
 func (r *Runner) Step(name string) {
 	r.mu.Lock()
 	r.step = name
@@ -372,7 +370,6 @@ func (e *CmdError) Error() string {
 	return b.String()
 }
 
-// tailWriter keeps the last n lines of a stream.
 type tailWriter struct {
 	mu   sync.Mutex
 	n    int
@@ -421,7 +418,6 @@ func (t *tailWriter) String() string {
 	return strings.Join(out, "\n")
 }
 
-// lineWriter calls fn once per complete line.
 type lineWriter struct {
 	mu  sync.Mutex
 	buf []byte

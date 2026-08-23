@@ -228,8 +228,6 @@ func (g *Global) env(jobs, workers int) (*core.Env, func(), error) {
 	return e, func() { closeLogger(log) }, nil
 }
 
-// repoRoot walks up from the executable and then the cwd looking for the
-// marker files this repo always has.
 func repoRoot() (string, error) {
 	var starts []string
 	if exe, err := os.Executable(); err == nil {

@@ -44,14 +44,10 @@ const sysrootLayout = "usr-symlink,relative-ldso,seed-include-lib,seed-libgcc-ob
 // nativeLayout is what host == target additionally does; see toolchain-traps.
 const nativeLayout = "native-gxx-dir,prefixed-tool-aliases"
 
-// Cross returns the BUILD -> t toolchain job.
 func Cross(t triple.Triple) core.Job { return crossJob(t) }
 
-// HostMake returns the job producing a static GNU make that runs on h.
 func HostMake(h triple.Triple) core.Job { return hostMakeJob(h) }
 
-// Canadian returns the deliverable: a toolchain that runs on h and emits code
-// for t.
 func Canadian(h, t triple.Triple) core.Job { return canadianJob(h, t) }
 
 // Matrix returns the DAG roots for a host x target selection.
@@ -128,7 +124,6 @@ func (b *builder) sh(ctx context.Context, name, dir string, envAdd map[string]st
 	return b.run(ctx, name, dir, envAdd, "sh", "-ec", script)
 }
 
-// make runs make in dir with the shared flags always applied.
 func (b *builder) make(ctx context.Context, name, dir string, envAdd map[string]string, vars makeVars, args ...string) error {
 	return b.run(ctx, name, dir, envAdd, makeArgv(b.e.MakeJobs(), vars, args...)...)
 }

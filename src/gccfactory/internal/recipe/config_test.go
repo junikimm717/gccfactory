@@ -39,7 +39,6 @@ func canadianCfg(host, target triple.Triple) buildCfg {
 	}
 }
 
-// flagValue returns the value of --name=... and whether it was present.
 func flagValue(flags []string, name string) (string, bool) {
 	prefix := name + "="
 	for _, f := range flags {

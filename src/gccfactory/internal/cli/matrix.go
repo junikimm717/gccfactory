@@ -47,8 +47,6 @@ Both flags accept a comma list, `+"`all`"+` (all %d supported triples) or `+"`pr
 		strings.Join(triple.ProvenHosts, ", "), strings.Join(triple.ProvenTargets, ", "))
 }
 
-// resolveMatrix turns the --host/--target flags into two lists, falling back to
-// the interactive picker when both are empty and we have a terminal.
 func resolveMatrix(cmd, hostFlag, targetFlag string) (hosts, targets []triple.Triple, err error) {
 	if hostFlag == "" && targetFlag == "" {
 		if !isTTY(os.Stdin) {
@@ -69,12 +67,6 @@ func resolveMatrix(cmd, hostFlag, targetFlag string) (hosts, targets []triple.Tr
 	return hosts, targets, nil
 }
 
-// rootJobs turns a matrix into the DAG roots to build.
-//
-//	--host H --target T  ->  the canadian toolchains H x T (the deliverable)
-//	--target T only      ->  just the build->T cross toolchains
-//	--host H only        ->  everything needed to host a toolchain on H
-//
 // The one-sided forms exist because those intermediates are useful on their
 // own and are by far the cheapest way to bisect a failure.
 func rootJobs(hosts, targets []triple.Triple) []core.Job {
