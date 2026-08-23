@@ -11,9 +11,9 @@ import (
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
-// Measured on the 8-core / 7.8 GB builder container: a cross: job peaks at
-// 4.0 GB and a canadian: job at ~3.0 GB, so a second concurrent gcc build
-// swaps. One job at -j6 is the fastest setting that fits.
+// Conservative on purpose: sized so one job never swaps on a small builder.
+// Memory, not cores, is the binding constraint -- peak RSS grows with -j. These
+// do not auto-scale; a large machine needs explicit --workers/-j.
 const (
 	defaultWorkers = 1
 	defaultJobs    = 6
@@ -44,12 +44,26 @@ FLAGS
   --target LIST    triples the finished compiler must EMIT code for
   -j N             make parallelism inside one job (default 6)
   --workers N      jobs built concurrently (default 1)
-                   Defaults are measured, not guessed, on the 8-core / 7.8 GB
-                   builder container: a cross: job peaks at 4.0 GB (during
-                   all-target-libstdc++-v3) and a canadian: job at ~3.0 GB, so
-                   two concurrent gcc builds would swap. One job at -j6 is the
-                   fastest safe setting; a cross: toolchain takes ~8 min.
-                   With more RAM, raise --workers before -j.
+
+                   SIZING. Memory is the binding constraint, not cores: a gcc
+                   bootstrap holds several GB per job at -j6, and that peak
+                   grows with -j. Budget
+
+                     workers ~= min(cores / j, usable_RAM / peak_RSS_per_job)
+
+                   Overshooting does not degrade gracefully -- the machine
+                   swaps, which is far slower than building serially.
+
+                   Raise --workers before -j. gcc's build has long serial
+                   stretches where extra -j buys nothing, so another worker
+                   fills cores that -j leaves idle; -j past the core count only
+                   adds memory pressure. On a big machine the right shape is
+                   many workers at a moderate -j.
+
+                   The defaults assume a small builder and DO NOT auto-scale,
+                   so a large machine will sit mostly idle until you pass these
+                   explicitly. Measure your own peak RSS rather than trusting a
+                   number from another machine.
   --dry-run        print the plan (slug, key, state) and exit; touches nothing
   --verify         after building, run the full ensure suite on each toolchain
   --keep-work      keep dist/work/<slug>.* on success so ` + "`gccfactory shell`" + `

@@ -439,6 +439,6 @@ readelf -l t | grep interpreter              # /lib/ld-musl-<arch>.so.1
 qemu-<target>-static -L <out>/<T> ./t
 ```
 
-`internal/ensure` automates all of this plus a 38-cell probe matrix
-(C, C++, exceptions, threads, TLS, atomics, dlopen; `-O0`/`-O2`;
-dynamic/static). Extend it rather than writing ad-hoc checks.
+`internal/ensure` automates all of this plus the full probe matrix
+(C, C++, exceptions, threads, TLS, atomics, dlopen, LTO, static-pie; `-O0`
+and `-O2`; dynamic and static). Extend it rather than writing ad-hoc checks.

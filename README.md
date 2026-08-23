@@ -29,6 +29,10 @@ docker/run ./src/gccf build --host proven --target proven
 
 Toolchains land in `dist/toolchains/out/<HOST>/<TARGET>/`.
 
+Defaults are sized for a small builder and do not auto-scale, so on a large
+machine pass `--workers`/`-j` explicitly or most of it will sit idle. Memory,
+not cores, is the limit — see `./src/gccf help build`.
+
 ## dist/
 
 Everything the build writes is under `dist/` (gitignored, safe to delete):

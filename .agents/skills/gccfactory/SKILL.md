@@ -14,7 +14,10 @@ and is kept authoritative — read it before writing new docs.
 ```
 src/gccf                 bash shim; the ONLY entry point. Linux-only by
                          design — it never launches a container itself.
-docker/Dockerfile        debian bookworm arm64 + qemu-user-static + go
+docker/Dockerfile        debian bookworm + qemu-user-static + go. Multi-arch:
+                         picks the go tarball from dpkg --print-architecture
+                         against a per-arch pinned sha256. A new arch needs a
+                         GO_SHA256_<arch> ARG or the build fails loudly.
 docker/run               opt-in escape hatch: run a command in that image
                          with the repo bind-mounted at /w. Use this when
                          working from macOS.
@@ -73,27 +76,52 @@ once per (host, target) pair.
 
 ## Parallelism and resources
 
-Two independent knobs, and the interesting part is that the defaults are
-**measured, not guessed** — on the 8-core / 7.8 GB builder container.
+Two independent knobs:
 
 | knob | default | meaning |
 |---|---|---|
 | `--workers N` | 1 | whole jobs built concurrently |
 | `-j N` | 6 | `make` parallelism *inside* one job |
 
-A `cross_<T>` job peaks at **4.0 GB** (during `all-target-libstdc++-v3`) and a
-`canadian_<H>__<T>` job at **~3.0 GB**. Two concurrent gcc builds therefore
-swap on a 7.8 GB box, which is far slower than running them in series. One job
-at `-j6` is the fastest setting that fits. A `cross_` toolchain takes ~8 min;
-the full 8-cell matrix took 1h17m.
+**Memory is the binding constraint, not cores.** This is the durable fact: a
+gcc bootstrap holds a lot of resident memory, and the peak scales with `-j`
+because each parallel compile is its own process. A job's peak lands during
+`all-target-libstdc++-v3` for `cross_<T>`, and is somewhat lower for
+`canadian_<H>__<T>` (which builds host code only). Order of magnitude: **a few
+GB per job at `-j6`**, growing with `-j`.
 
-**With more RAM, raise `--workers` before `-j`.** Job-level parallelism scales
-better than make-level here: gcc's build has long serial stretches where `-j`
-buys nothing, so a second worker fills the cores that `-j6` leaves idle.
-`-j` above the core count only adds memory pressure.
+So size it as:
 
-`Env.Workers()` clamps to ≥1 and `Env.MakeJobs()` falls back to the CPU count,
-so neither can be set to something degenerate.
+    workers ≈ min( cores / j , (usable_RAM - headroom) / peak_RSS_per_job )
+
+and treat cores as the *second* limit, not the first. Overshooting on memory
+does not degrade gracefully — the machine swaps, and a swapping gcc build is
+dramatically slower than the same work done serially.
+
+**Raise `--workers` before `-j`.** Job-level parallelism scales better here:
+gcc's build has long serial stretches (configure, single-threaded link steps)
+where extra `-j` buys nothing, so another worker fills cores that `-j` leaves
+idle. `-j` beyond the core count only adds memory pressure. On a large machine
+the right shape is many workers at a moderate `-j`, not one worker at `-j128`.
+
+The defaults are conservative on purpose: they assume a small builder and are
+sized so a single job never swaps. **They do not auto-scale** —
+`defaultWorkers`/`defaultJobs` in `internal/cli/build.go` are constants, so on
+a big machine you must pass `--workers`/`-j` explicitly or the box will sit
+mostly idle. (`Env.Workers()` clamps to ≥1; `Env.MakeJobs()` falls back to the
+CPU count only when `Jobs < 1`.)
+
+**Measure on your own machine rather than trusting a number from someone
+else's.** The matrix is embarrassingly parallel across cells, so the payoff is
+real. One way:
+
+```sh
+./src/gccf build --target x86_64-linux-musl --workers 1 -j 6 &
+while sleep 10; do ps -o rss=,comm= -e | sort -rn | head -3; done
+```
+
+Take the peak RSS of one job, add headroom, divide into RAM. Then raise
+`--workers` until wall-clock stops improving.
 
 ## How verification works
 
@@ -143,8 +171,9 @@ static, plus `dlopen` and `static-pie` which are one mode each).
   on its own, because only the LTO probes can prove LTO works.
 
 Results are a `Report` of named `Check`s (pass / fail / **skip**, printed
-distinctly so a skip is never mistaken for a pass). A green matrix run is 118
-checks, 0 failures, 2 known lto-plugin skips.
+distinctly so a skip is never mistaken for a pass). Check totals scale with the
+matrix; what matters is **0 failures**, and that every skip is one you can name
+(the lto-plugin skip on a fully-static host toolchain is the expected one).
 
 Run it with `./src/gccf verify` — with no flags it verifies everything
 currently built in `dist/`, so it is always a safe thing to type.
