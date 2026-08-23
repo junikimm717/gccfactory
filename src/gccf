@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# gccf - the only entry point. Builds gccfactory if needed, then runs it.
+#
+#   ./src/gccf                 print the help (which is the documentation)
+#   ./src/gccf build           pick a host x target matrix and build it
+#   ./src/gccf status | verify | logs <slug> | shell <slug> | clean | sources
+#
+# This is a Linux tool. It needs go, a native toolchain, and qemu-user-static.
+# Not on Linux? Launch a container yourself; `docker/run` is one way.
+#
+# Environment: GCCF_DIST GCCF_JOBS GCCF_WORKERS GCCF_QEMU_DIR
+set -euo pipefail
+
+if [[ $(uname -s) != Linux ]]; then
+  cat >&2 <<EOF
+gccf: this is a Linux tool, but you are on $(uname -s).
+      Bring your own Linux and run it there. From this repo, one way is:
+
+        docker/run ./src/gccf ${*:-help}
+EOF
+  exit 1
+fi
+
+ROOT=$(cd -- "$(dirname -- "$(readlink -f -- "$0" 2>/dev/null || echo "$0")")/.." && pwd)
+
+export PATH=/usr/local/go/bin:$PATH
+command -v go >/dev/null || { echo "gccf: no 'go' on PATH (expected /usr/local/go/bin/go)" >&2; exit 1; }
+
+DIST=${GCCF_DIST:-$ROOT/dist}
+BIN=$DIST/.bin/gccfactory
+mkdir -p "$(dirname "$BIN")"
+
+# Rebuild only when a source file is newer than the binary. `find -newer` on the
+# whole module is cheap and avoids a multi-second go build on every invocation.
+needs_build=1
+if [[ -x $BIN ]] && [[ -z $(find "$ROOT/src/gccfactory" \( -name '*.go' -o -name '*.json' -o -name 'go.mod' \) -newer "$BIN" -print -quit) ]]; then
+  needs_build=0
+fi
+if (( needs_build )); then
+  echo "gccf: compiling gccfactory..." >&2
+  ( cd "$ROOT/src/gccfactory" && go build -o "$BIN" . )
+fi
+
+# qemu-user-static lives in /usr/bin on debian; gccfactory appends -<arch>-static.
+QEMU_DIR=${GCCF_QEMU_DIR:-/usr/bin}
+[[ -x $QEMU_DIR/qemu-x86_64-static ]] || \
+  echo "gccf: warning: no $QEMU_DIR/qemu-x86_64-static; 'verify' will not be able to run host binaries" >&2
+
+# GCCF_JOBS / GCCF_WORKERS are read by gccfactory itself as flag defaults, so
+# they just need to be in the environment; explicit -j/--workers still win.
+exec "$BIN" --dist "$DIST" --qemu-dir "$QEMU_DIR" "$@"

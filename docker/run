@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# docker/run - run a command inside the Linux builder image.
+#
+# gccf is a Linux tool. This is the escape hatch if you are not on Linux; it is
+# deliberately not wired into gccf, which never launches a container itself.
+#
+#   docker/run                        an interactive shell in /w
+#   docker/run ./src/gccf status      run gccf inside the container
+#   docker/run ./src/gccf build --host proven --target proven
+#
+# The repo is bind-mounted at /w, so dist/ persists on the host between runs.
+#
+# Environment: GCCF_IMAGE GCCF_JOBS GCCF_WORKERS
+set -euo pipefail
+
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+IMAGE=${GCCF_IMAGE:-gccfactory-builder}
+
+command -v docker >/dev/null || { echo "docker/run: docker is required" >&2; exit 1; }
+
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  echo "docker/run: building the $IMAGE image (one time, a few minutes)..." >&2
+  docker build -t "$IMAGE" "$ROOT/docker"
+fi
+
+if (( $# == 0 )); then set -- bash; fi
+
+tty_flags=()
+[[ -t 0 && -t 1 ]] && tty_flags=(-i -t)   # only when a human is watching
+
+exec docker run --rm "${tty_flags[@]+"${tty_flags[@]}"}" \
+  -v "$ROOT:/w" -w /w \
+  -e "GCCF_JOBS=${GCCF_JOBS:-}" -e "GCCF_WORKERS=${GCCF_WORKERS:-}" \
+  -e "TERM=${TERM:-xterm}" \
+  "$IMAGE" "$@"

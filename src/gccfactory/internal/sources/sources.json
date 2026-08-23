@@ -1,0 +1,125 @@
+[
+  {
+    "name": "binutils",
+    "version": "2.44",
+    "file": "binutils-2.44.tar.xz",
+    "urls": [
+      "https://ftpmirror.gnu.org/gnu/binutils/binutils-2.44.tar.xz",
+      "https://ftp.gnu.org/gnu/binutils/binutils-2.44.tar.xz",
+      "https://sourceware.org/pub/binutils/releases/binutils-2.44.tar.xz"
+    ],
+    "sha256": "ce2017e059d63e67ddb9240e9d4ec49c2893605035cd60e92ad53177f4377237",
+    "topdir": "binutils-2.44",
+    "strip": 1
+  },
+  {
+    "name": "config.sub",
+    "version": "3d5db9ebe860",
+    "file": "config.sub",
+    "urls": [
+      "https://gitweb.git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=3d5db9ebe860",
+      "https://cgit.git.savannah.gnu.org/cgit/config.git/plain/config.sub?id=3d5db9ebe860",
+      "https://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub;hb=3d5db9ebe860"
+    ],
+    "sha256": "75d5d255a2a273b6e651f82eecfabf6cbcd8eaeae70e86b417384c8f4a58d8d3",
+    "topdir": "",
+    "raw": true
+  },
+  {
+    "name": "gcc",
+    "version": "14.2.0",
+    "file": "gcc-14.2.0.tar.xz",
+    "urls": [
+      "https://ftpmirror.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz",
+      "https://ftp.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.xz"
+    ],
+    "sha256": "a7b39bc69cbf9e25826c5a60ab26477001f7c08d85cec04bc0e29cabed6f3cc9",
+    "topdir": "gcc-14.2.0",
+    "strip": 1
+  },
+  {
+    "name": "gmp",
+    "version": "6.3.0",
+    "file": "gmp-6.3.0.tar.xz",
+    "urls": [
+      "https://ftpmirror.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz",
+      "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz"
+    ],
+    "sha256": "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898",
+    "topdir": "gmp-6.3.0",
+    "strip": 1
+  },
+  {
+    "name": "isl",
+    "version": "0.27",
+    "file": "isl-0.27.tar.xz",
+    "urls": [
+      "https://downloads.sourceforge.net/project/libisl/isl-0.27.tar.xz",
+      "https://libisl.sourceforge.io/isl-0.27.tar.xz"
+    ],
+    "sha256": "6d8babb59e7b672e8cb7870e874f3f7b813b6e00e6af3f8b04f7579965643d5c",
+    "topdir": "isl-0.27",
+    "strip": 1
+  },
+  {
+    "name": "linux-headers",
+    "version": "4.19.88-2",
+    "file": "linux-headers-4.19.88-2.tar.xz",
+    "urls": [
+      "https://ftp.barfooze.de/pub/sabotage/tarballs/linux-headers-4.19.88-2.tar.xz",
+      "http://ftp.barfooze.de/pub/sabotage/tarballs/linux-headers-4.19.88-2.tar.xz"
+    ],
+    "sha256": "dc7abf734487553644258a3822cfd429d74656749e309f2b25f09f4282e05588",
+    "topdir": "linux-headers-4.19.88-2",
+    "strip": 1
+  },
+  {
+    "name": "make",
+    "version": "4.4.1",
+    "file": "make-4.4.1.tar.gz",
+    "urls": [
+      "https://ftpmirror.gnu.org/gnu/make/make-4.4.1.tar.gz",
+      "https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz"
+    ],
+    "sha256": "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3",
+    "topdir": "make-4.4.1",
+    "strip": 1
+  },
+  {
+    "name": "mpc",
+    "version": "1.3.1",
+    "file": "mpc-1.3.1.tar.gz",
+    "urls": [
+      "https://ftpmirror.gnu.org/gnu/mpc/mpc-1.3.1.tar.gz",
+      "https://ftp.gnu.org/gnu/mpc/mpc-1.3.1.tar.gz"
+    ],
+    "sha256": "ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8",
+    "topdir": "mpc-1.3.1",
+    "strip": 1
+  },
+  {
+    "name": "mpfr",
+    "version": "4.2.2",
+    "file": "mpfr-4.2.2.tar.xz",
+    "urls": [
+      "https://ftpmirror.gnu.org/gnu/mpfr/mpfr-4.2.2.tar.xz",
+      "https://ftp.gnu.org/gnu/mpfr/mpfr-4.2.2.tar.xz",
+      "https://www.mpfr.org/mpfr-4.2.2/mpfr-4.2.2.tar.xz"
+    ],
+    "sha256": "b67ba0383ef7e8a8563734e2e889ef5ec3c3b898a01d00fa0a6869ad81c6ce01",
+    "topdir": "mpfr-4.2.2",
+    "strip": 1
+  },
+  {
+    "name": "musl",
+    "version": "1.2.5",
+    "file": "musl-1.2.5.tar.gz",
+    "urls": [
+      "https://musl.libc.org/releases/musl-1.2.5.tar.gz",
+      "https://sources.buildroot.net/musl/musl-1.2.5.tar.gz"
+    ],
+    "sha256": "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4",
+    "topdir": "musl-1.2.5",
+    "strip": 1
+  }
+]
