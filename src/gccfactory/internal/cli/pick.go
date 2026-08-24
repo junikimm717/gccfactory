@@ -4,15 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
+
+	"golang.org/x/term"
 
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
 // pickMatrix is the two-column multi-select shown when `build`/`verify` is run
-// with no --host/--target on a terminal. Deliberately dependency-free: raw ANSI
-// plus stty for raw mode, which is all a container terminal needs.
+// with no --host/--target on a terminal. Raw ANSI plus x/term for raw mode,
+// which is all a container terminal needs.
 //
 //	tab      switch column        space  toggle
 //	up/down  move (or j/k)        a      select all / none in this column
@@ -198,18 +199,13 @@ func contains(hay []string, needle string) bool {
 	return false
 }
 
-// Shelling out keeps this package dependency-free.
 func rawMode() (func(), error) {
-	run := func(args ...string) error {
-		c := exec.Command("stty", args...)
-		c.Stdin = os.Stdin
-		c.Stderr = os.Stderr
-		return c.Run()
-	}
-	if err := run("raw", "-echo"); err != nil {
+	fd := int(os.Stdin.Fd())
+	state, err := term.MakeRaw(fd)
+	if err != nil {
 		return nil, err
 	}
-	return func() { _ = run("sane") }, nil
+	return func() { _ = term.Restore(fd, state) }, nil
 }
 
 func decodeKey(b []byte) string {

@@ -4,13 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
-	"unsafe"
+
+	"golang.org/x/term"
 )
 
 var colorOn bool
@@ -45,14 +44,11 @@ var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
 func visLen(s string) int { return len([]rune(ansiRE.ReplaceAllString(s, ""))) }
 
-// isTTY is a real terminal test (an ioctl), not a char-device test: /dev/null
-// is a char device, and treating it as a terminal would make `build` with no
-// flags hang on a picker nobody can see.
+// A real terminal test (TCGETS-family ioctl), not a char-device test:
+// /dev/null is a char device, and treating it as a terminal would make
+// `build` with no flags hang on a picker nobody can see.
 func isTTY(f *os.File) bool {
-	var t syscall.Termios
-	_, _, errno := syscall.Syscall6(syscall.SYS_IOCTL, f.Fd(),
-		uintptr(ioctlGetTermios), uintptr(unsafe.Pointer(&t)), 0, 0, 0)
-	return errno == 0
+	return term.IsTerminal(int(f.Fd()))
 }
 
 func termSize() (cols, rows int) {
@@ -62,23 +58,16 @@ func termSize() (cols, rows int) {
 			cols = n
 		}
 	}
-	out, err := sttyOutput(os.Stdin, "size")
+	c, r, err := term.GetSize(int(os.Stdin.Fd()))
 	if err != nil {
-		if out, err = sttyOutput(os.Stdout, "size"); err != nil {
+		if c, r, err = term.GetSize(int(os.Stdout.Fd())); err != nil {
 			return cols, rows
 		}
 	}
-	var r, c int
-	if _, err := fmt.Sscanf(strings.TrimSpace(string(out)), "%d %d", &r, &c); err == nil && c > 0 {
+	if c > 0 {
 		return c, r
 	}
 	return cols, rows
-}
-
-func sttyOutput(tty *os.File, args ...string) ([]byte, error) {
-	cmd := exec.Command("stty", args...)
-	cmd.Stdin = tty
-	return cmd.Output()
 }
 
 type table struct {

@@ -1,7 +1,0 @@
-//go:build linux
-
-package cli
-
-import "syscall"
-
-const ioctlGetTermios = syscall.TCGETS

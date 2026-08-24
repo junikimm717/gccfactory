@@ -2,6 +2,8 @@ package cli
 
 import (
 	"errors"
+	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,6 +126,109 @@ func TestUnknownFlagIsAUsageError(t *testing.T) {
 	err := runStatus(&Global{Dist: t.TempDir(), ColorWhen: "never"}, []string{"--nonsense"})
 	if !errors.Is(err, errUsage) {
 		t.Fatalf("got %v, want a usage error", err)
+	}
+}
+
+// logs and friends print straight to os.Stdout rather than an injectable
+// writer, so the only way to assert on their output is to redirect it.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdout
+	os.Stdout = w
+	fn()
+	os.Stdout = old
+	w.Close()
+	out, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+func writeFakeJobLog(t *testing.T, dist, slug, body string) {
+	t.Helper()
+	mustWrite(t, filepath.Join(dist, "logs", "jobs", slug, "latest", "001-configure.log"), body)
+}
+
+// This is the exact shape from the bug report: `logs <slug> --failed`. Before
+// the fix, flag.FlagSet.Parse stopped scanning at the positional slug, so
+// --failed was silently dropped and the default (table + tail) output came
+// back instead of the failed-step-only tail.
+func TestLogsFlagAfterPositionalIsHonored(t *testing.T) {
+	dist := t.TempDir()
+	writeFakeJobLog(t, dist, "cross_test", "the failing output\n")
+	g := &Global{Dist: dist, ColorWhen: "never"}
+
+	out := captureStdout(t, func() {
+		if err := runLogs(g, []string{"cross_test", "--failed"}); err != nil {
+			t.Fatalf("runLogs with --failed after the slug: %v", err)
+		}
+	})
+	if strings.Contains(out, "full step:") {
+		t.Errorf("--failed after the slug was ignored (fell through to the default table view):\n%s", out)
+	}
+}
+
+// Regression guard: the pre-fix form (flag before the positional) must keep
+// working exactly as it did before.
+func TestLogsFlagBeforePositionalStillWorks(t *testing.T) {
+	dist := t.TempDir()
+	writeFakeJobLog(t, dist, "cross_test", "the failing output\n")
+	g := &Global{Dist: dist, ColorWhen: "never"}
+
+	out := captureStdout(t, func() {
+		if err := runLogs(g, []string{"--failed", "cross_test"}); err != nil {
+			t.Fatalf("runLogs with --failed before the slug: %v", err)
+		}
+	})
+	if strings.Contains(out, "full step:") {
+		t.Errorf("--failed before the slug should suppress the default table view:\n%s", out)
+	}
+}
+
+// The dangerous variant from the bug report: a GLOBAL flag (--dist) placed
+// after the positional slug. Before the fix this was silently ignored -
+// `gccf logs <slug> --dist /bogus` would read the REAL dist and exit 0. Now
+// it must actually redirect to the bogus dist and fail to find the job there.
+func TestLogsGlobalFlagAfterPositionalIsHonored(t *testing.T) {
+	realDist := t.TempDir()
+	writeFakeJobLog(t, realDist, "cross_test", "the failing output\n")
+	bogusDist := t.TempDir() // deliberately has no logs for cross_test
+
+	g := &Global{Dist: realDist, ColorWhen: "never"}
+	err := runLogs(g, []string{"cross_test", "--dist", bogusDist})
+	if err == nil {
+		t.Fatal("--dist after the slug was ignored: runLogs succeeded against the real dist instead of the bogus one")
+	}
+	if g.Dist != bogusDist {
+		t.Fatalf("g.Dist = %q, want it rebound to the post-positional --dist value %q", g.Dist, bogusDist)
+	}
+	if !strings.Contains(err.Error(), bogusDist) {
+		t.Errorf("error should name the bogus dist it actually looked under: %v", err)
+	}
+}
+
+// parse() is the shared mechanism behind every subcommand's flag handling;
+// exercise it directly to pin down exactly what gets bound, independent of
+// any one command's plumbing.
+func TestParseBindsFlagValueAfterPositionalNotJustTheFlag(t *testing.T) {
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	dist := fs.String("dist", "", "")
+
+	if err := parse(fs, []string{"cross_test", "--dist", "/some/path"}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if fs.NArg() != 1 || fs.Arg(0) != "cross_test" {
+		t.Fatalf("positional got mangled: NArg=%d Arg(0)=%q, want the slug preserved", fs.NArg(), fs.Arg(0))
+	}
+	if *dist != "/some/path" {
+		t.Fatalf("--dist = %q, want the value bound exactly, not the flag name or a bare bool", *dist)
 	}
 }
 

@@ -1,0 +1,128 @@
+# Every push to main republishes the `rolling` draft release: statically linked
+# gccfactory binaries that need nothing but a gcc toolchain and coreutils on the
+# target box. Draft on purpose -- it is a build of whatever just landed, not a
+# blessed version, so it stays invisible until someone publishes it.
+name: rolling
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rolling
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/gccfactory/go.mod
+          cache-dependency-path: src/gccfactory/go.sum
+      - run: go vet ./...
+        working-directory: src/gccfactory
+      - run: go test ./...
+        working-directory: src/gccfactory
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: src/gccfactory/go.mod
+          cache-dependency-path: src/gccfactory/go.sum
+
+      # CGO_ENABLED=0 is the load-bearing part: it drops the libc/libresolv
+      # link and switches to the pure-Go DNS resolver, so the binary runs on a
+      # host whose glibc it was never built against.
+      - name: build
+        working-directory: src/gccfactory
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -trimpath -ldflags "-s -w" \
+            -o "${RUNNER_TEMP}/gccfactory-linux-${GOARCH}" .
+
+      - name: assert the binary is actually static
+        run: |
+          bin="${RUNNER_TEMP}/gccfactory-linux-${{ matrix.goarch }}"
+          file "$bin"
+          file "$bin" | grep -q "statically linked" || {
+            echo "::error::$bin is not statically linked"; exit 1; }
+          # A dynamic Go binary still reports an interpreter; a static one must not.
+          ! readelf -l "$bin" | grep -q "program interpreter" || {
+            echo "::error::$bin has a PT_INTERP"; exit 1; }
+          # go stamps vcs.revision from the checkout; assert it so a release
+          # asset can always be traced back to a commit.
+          go version -m "$bin" | grep -q "vcs.revision=${GITHUB_SHA}" || {
+            echo "::error::$bin is not stamped with ${GITHUB_SHA}"; exit 1; }
+
+      # Only the native arch can be executed on the runner; running the arm64
+      # build would need qemu, and a smoke test that needs emulation to pass is
+      # not proving what we want here.
+      - name: smoke test (amd64 only)
+        if: matrix.goarch == 'amd64'
+        run: |
+          bin="${RUNNER_TEMP}/gccfactory-linux-amd64"
+          "$bin" help > /dev/null
+          "$bin" --dist "${RUNNER_TEMP}/d" sources | head -3
+          "$bin" --dist "${RUNNER_TEMP}/d" build \
+            --host x86_64-linux-musl --target riscv64-linux-musl --dry-run > /dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gccfactory-linux-${{ matrix.goarch }}
+          path: ${{ runner.temp }}/gccfactory-linux-${{ matrix.goarch }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dl
+          merge-multiple: true
+
+      - name: checksums
+        working-directory: dl
+        run: |
+          chmod +x gccfactory-linux-*
+          sha256sum gccfactory-linux-* > SHA256SUMS
+          cat SHA256SUMS
+
+      # Recreated rather than edited: a rolling release should carry the assets
+      # of exactly one commit, and `gh release upload --clobber` would leave
+      # stale assets behind if a future build ever emits a different set.
+      - name: republish the rolling draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete rolling --yes --cleanup-tag || true
+          gh release create rolling \
+            --draft \
+            --target "${GITHUB_SHA}" \
+            --title "rolling (${GITHUB_SHA:0:12})" \
+            --notes "Statically linked build of ${GITHUB_SHA}.
+
+          Needs only a gcc toolchain and coreutils on the target box. Pass
+          \`--dist\` and \`--qemu-dir\` explicitly; the repo checkout and the
+          \`src/gccf\` shim are conveniences, not requirements.
+
+              ./gccfactory-linux-amd64 --dist /var/tmp/dist --qemu-dir /usr/bin \\
+                build --host x86_64-linux-musl --target riscv64-linux-musl" \
+            dl/gccfactory-linux-amd64 dl/gccfactory-linux-arm64 dl/SHA256SUMS

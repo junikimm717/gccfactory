@@ -80,14 +80,13 @@ type Options struct {
 }
 
 type sink struct {
-	mu        sync.Mutex
-	out       io.Writer
-	file      *os.File
-	enc       *json.Encoder
-	level     Level
-	color     bool
-	runDir    string
-	observers []func(Event)
+	mu     sync.Mutex
+	out    io.Writer
+	file   *os.File
+	enc    *json.Encoder
+	level  Level
+	color  bool
+	runDir string
 }
 
 // Logger writes to both streams. Derive scoped loggers with With/Named; they
@@ -188,17 +187,6 @@ func (l *Logger) Enabled(lv Level) bool {
 	return lv >= l.s.level
 }
 
-// Observe registers a callback invoked for every emitted event, in order. The
-// CLI uses it to drive live status output.
-func (l *Logger) Observe(fn func(Event)) {
-	if l == nil || l.s == nil || fn == nil {
-		return
-	}
-	l.s.mu.Lock()
-	defer l.s.mu.Unlock()
-	l.s.observers = append(l.s.observers, fn)
-}
-
 // The keys "job" and "step" are promoted to dedicated event fields.
 func (l *Logger) With(kv ...any) *Logger {
 	if l == nil || l.s == nil {
@@ -272,9 +260,6 @@ func (l *Logger) write(lv Level, ev Event) {
 		}
 	}
 	fmt.Fprintln(s.out, humanLine(lv, ev, s.color))
-	for _, fn := range s.observers {
-		fn(ev)
-	}
 }
 
 const (
