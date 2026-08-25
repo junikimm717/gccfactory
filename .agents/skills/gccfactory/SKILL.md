@@ -210,6 +210,31 @@ matrix; what matters is **0 failures**, and that every skip is one you can name
 Run it with `./src/gccf verify` — with no flags it verifies everything
 currently built in `dist/`, so it is always a safe thing to type.
 
+### Executing foreign binaries: qemu is a default, not a requirement
+
+Everything above needs some way to *run* a binary for an architecture the build
+machine cannot execute. That is `ensure.Emulator`, and it is only ever an argv
+prefix — the harness appends the program and execs.
+
+Two ways to get one, both via `ensure.EmulatorSpec` (carried on `core.Env` as
+`QemuTemplate` + `ExecWrapper`, resolved per triple at the point of use):
+
+- `--qemu-dir` → `qemu-<arch>-static`, told the sysroot with `-L`.
+- `--exec-wrapper` → any command at all, e.g. `docker run`. It is handed no
+  sysroot, so `Launch` starts a dynamic binary through its musl loader
+  explicitly — the one form that needs no cooperation from the emulator.
+
+**qemu-user only exists on Linux.** linux-user mode translates Linux syscalls
+into host syscalls, so it needs a Linux kernel underneath and cannot be built
+for macOS. `--exec-wrapper` is why that is no longer fatal: verification can be
+delegated to a container. It is equally the answer on a Linux box with no
+qemu-user packages installed.
+
+An emulator that cannot run anything is the zero `Emulator`; `Usable()` is
+false and every caller must **say so** (`ensure.NoEmulatorf`) rather than
+quietly skipping. Silently publishing an unverified toolchain is the one
+failure mode this whole package exists to prevent.
+
 ## The debug loop
 
 Recompiles are expensive. Never rerun a full build to test a hypothesis.

@@ -30,7 +30,12 @@ type harness struct {
 	runPrefix   []string          // argv prefix to execute a produced binary
 	runFallback []string          // as runPrefix, but invoking the musl loader directly
 	runEnv      map[string]string // env for run commands
-	norun       bool              // compile and inspect only
+	// How to describe a runFallback retry, "" when it is the normal path.
+	fallbackNote string
+	// Start a program that has a PT_INTERP via runFallback rather than
+	// discovering it failed. See Emulator.LoaderForDynamic.
+	loaderForDynamic bool
+	norun            bool // compile and inspect only
 }
 
 // tool is the argv prefix for a target-prefixed toolchain program, launched
@@ -233,7 +238,7 @@ func (h *harness) probe(ctx context.Context, p Probe, t triple.Triple, opt strin
 
 	if h.norun {
 		h.rep.Add(Check{Name: name, OK: true, Skipped: true, Dur: time.Since(start),
-			Detail: "built ok (" + desc + ") but not run: no qemu"})
+			Detail: "built ok (" + desc + ") but not run: no emulator"})
 		return
 	}
 
@@ -256,6 +261,12 @@ func (h *harness) probe(ctx context.Context, p Probe, t triple.Triple, opt strin
 // degraded instead of quietly passing.
 func (h *harness) runBinary(ctx context.Context, step, dir, prog string) (stdout, degraded string, out []byte, argv []string, err error) {
 	argv = append(append([]string(nil), h.runPrefix...), prog)
+	// Deciding from the ELF beats parsing the failure: a bare exec of a
+	// dynamic program fails with plain ENOENT, which is indistinguishable
+	// from the program itself being absent.
+	if h.loaderForDynamic && len(h.runFallback) > 0 && hasInterp(filepath.Join(dir, prog)) {
+		argv = append(append([]string(nil), h.runFallback...), prog)
+	}
 	stdout, out, err = h.execCapture(ctx, step+"-run", dir, argv, h.runEnv, h.opts.runTimeout)
 	if err == nil || len(h.runFallback) == 0 || !loaderMissing(out) {
 		return stdout, "", out, argv, err
@@ -265,8 +276,11 @@ func (h *harness) runBinary(ctx context.Context, step, dir, prog string) (stdout
 	if altErr != nil {
 		return stdout, "", append(out, altCombined...), argv, err
 	}
-	return altOut, "DEGRADED: qemu -L <sysroot> could not load the interpreter; ran via " +
-		shJoin(h.runFallback), altCombined, alt, nil
+	var note string
+	if h.fallbackNote != "" {
+		note = h.fallbackNote + shJoin(h.runFallback)
+	}
+	return altOut, note, altCombined, alt, nil
 }
 
 func joinDetail(parts ...string) string {
@@ -277,6 +291,11 @@ func joinDetail(parts ...string) string {
 		}
 	}
 	return strings.Join(keep, " | ")
+}
+
+func hasInterp(path string) bool {
+	info, err := ReadELF(path)
+	return err == nil && info.Interp != ""
 }
 
 // loaderMissing recognises qemu failing to open the musl interpreter, e.g.
@@ -342,7 +361,7 @@ func (h *harness) ltoArchive(ctx context.Context, p Probe) {
 	}
 	if h.norun {
 		h.rep.Add(Check{Name: "lto-archive", OK: true, Skipped: true, Dur: time.Since(start),
-			Detail: "built ok but not run: no qemu"})
+			Detail: "built ok but not run: no emulator"})
 		return
 	}
 	stdout, degraded, runOut, runArgv, err := h.runBinary(ctx, "lto-archive", dir, "./probe")

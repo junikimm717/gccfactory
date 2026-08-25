@@ -67,15 +67,16 @@ func TestQemuNames(t *testing.T) {
 	}
 }
 
-// TestCrossToolchainNoQemu: without a qemu we still compile everything and
-// check the ELF identity, but say plainly that nothing was executed.
-func TestCrossToolchainNoQemu(t *testing.T) {
+// TestCrossToolchainNoEmulator: with no way to execute target binaries we
+// still compile everything and check the ELF identity, but say plainly that
+// nothing was executed.
+func TestCrossToolchainNoEmulator(t *testing.T) {
 	host := triple.MustParse("x86_64-linux-musl")
 	target := triple.MustParse("i386-linux-musl")
 	f := newFakeToolchain(t, host, target)
 	r := newFakeRunner(t, f)
 
-	rep := CrossToolchain(context.Background(), r, t.TempDir(), f.prefix, target, "",
+	rep := CrossToolchain(context.Background(), r, t.TempDir(), f.prefix, target, Emulator{},
 		WithOptLevels("-O0"), WithProbes(Probes()[0]))
 	var built, ran int
 	for _, c := range rep.Checks {
@@ -84,7 +85,7 @@ func TestCrossToolchainNoQemu(t *testing.T) {
 				ran++
 			}
 			built++
-			if !strings.Contains(c.Detail, "not run: no qemu") {
+			if !strings.Contains(c.Detail, "not run: no emulator") {
 				t.Errorf("%s: detail = %q", c.Name, c.Detail)
 			}
 		}
@@ -105,7 +106,7 @@ func TestCrossToolchainMatrix(t *testing.T) {
 	f := newFakeToolchain(t, host, target)
 	r := newFakeRunner(t, f)
 
-	rep := CrossToolchain(context.Background(), r, t.TempDir(), f.prefix, target, "/usr/bin/qemu-arm",
+	rep := CrossToolchain(context.Background(), r, t.TempDir(), f.prefix, target, QemuEmulator("/usr/bin/qemu-arm"),
 		WithOptLevels("-O2"), WithProbes(Probes()...))
 	for _, c := range rep.Failures() {
 		if c.Name != "bin-elf" && c.Name != "tooldir-elf" && c.Name != "gcc-nm-lto" {

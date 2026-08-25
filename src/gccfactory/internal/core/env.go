@@ -50,10 +50,14 @@ type Env struct {
 	RepoRoot   string
 	Jobs       int // -j parallelism handed to make
 	MaxWorkers int
-	QemuHost   string // qemu-user binary for HOST-arch binaries
-	QemuTarget string // qemu-user binary for TARGET-arch binaries
-	KeepWork   bool   // retain work trees after a successful build, for `shell`
-	Log        *logging.Logger
+	// How to execute a foreign-arch binary during verification. QemuTemplate
+	// is a printf template with one %s for the qemu-user arch name;
+	// ExecWrapper is an argv template that overrides it, for hosts with no
+	// qemu-user at all. Both feed ensure.EmulatorSpec at the point of use.
+	QemuTemplate string
+	ExecWrapper  []string
+	KeepWork     bool // retain work trees after a successful build, for `shell`
+	Log          *logging.Logger
 }
 
 func (e *Env) Path(parts ...string) string {

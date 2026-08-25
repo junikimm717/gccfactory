@@ -41,6 +41,12 @@ const globalHelp = `Global flags (accepted before or after the command):
   --qemu-dir DIR   where qemu-<arch>-static lives (default /usr/bin). May instead
                    be a template containing %s, e.g. /opt/qemu/bin/qemu-%s.
                    qemu is how we prove a HOST binary really runs on HOST.
+                   Linux only: qemu-user needs a Linux kernel under it.
+  --exec-wrapper C any command that makes a foreign-arch binary runnable, used
+                   instead of qemu. Placeholders {triple} {arch} {platform}
+                   {dist}. This is how you verify where qemu-user cannot exist:
+                     --exec-wrapper 'docker run --rm -v {dist}:{dist} \
+                                       --platform {platform} alpine'
   --color WHEN     auto|always|never (default auto: color only on a terminal).
   -v, --verbose    mirror every command's output to the terminal as it runs.
                    Without it, output still goes to dist/logs/ in full.`

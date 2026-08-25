@@ -172,9 +172,15 @@ func (v *verifier) cross(t triple.Triple) {
 	if !v.exists(prefix) {
 		return
 	}
+	em, err := emulatorFor(v.e, t)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s %v\n", red("error:"), err)
+		v.failed++
+		return
+	}
 	fmt.Printf("%s %s\n", bold("verify cross:"), t.Raw)
 	v.with(j.Slug(), func(r *core.Runner, work string) *ensure.Report {
-		return checkCross(v.ctx, r, work, prefix, t, qemuPath(v.qemuDir(), t))
+		return checkCross(v.ctx, r, work, prefix, t, em)
 	})
 }
 
@@ -184,13 +190,23 @@ func (v *verifier) canadian(h, t triple.Triple) {
 	if !v.exists(prefix) {
 		return
 	}
+	emHost, err := emulatorFor(v.e, h)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s %v\n", red("error:"), err)
+		v.failed++
+		return
+	}
+	emTarget, err := emulatorFor(v.e, t)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s %v\n", red("error:"), err)
+		v.failed++
+		return
+	}
 	fmt.Printf("%s host=%s target=%s\n", bold("verify canadian:"), h.Raw, t.Raw)
 	v.with(j.Slug(), func(r *core.Runner, work string) *ensure.Report {
-		return checkCanadian(v.ctx, r, work, prefix, h, t, qemuPath(v.qemuDir(), h), qemuPath(v.qemuDir(), t))
+		return checkCanadian(v.ctx, r, work, prefix, h, t, emHost, emTarget)
 	})
 }
-
-func (v *verifier) qemuDir() string { return v.e.QemuHost }
 
 func (v *verifier) exists(prefix string) bool {
 	_, ok := artifactManifest(prefix)

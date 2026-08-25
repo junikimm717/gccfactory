@@ -11,9 +11,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/core"
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/ensure"
@@ -114,17 +112,9 @@ func (a ensureRunner) Output(ctx context.Context, c ensure.Cmd) ([]byte, error) 
 	return []byte(out), err
 }
 
-// qemuFor resolves the qemu-user binary for a triple from the template stored
-// in core.Env. Both a directory (/usr/bin) and a printf template
-// (/usr/bin/qemu-%s-static) are accepted, matching internal/cli.
-func qemuFor(tmpl string, t triple.Triple) string {
-	if tmpl == "" {
-		return ""
-	}
-	if strings.Contains(tmpl, "%s") {
-		return fmt.Sprintf(tmpl, t.QemuName())
-	}
-	return filepath.Join(tmpl, "qemu-"+t.QemuName()+"-static")
+func emulatorFor(e *core.Env, t triple.Triple) (ensure.Emulator, error) {
+	spec := ensure.EmulatorSpec{Qemu: e.QemuTemplate, Wrapper: e.ExecWrapper, Dist: e.Dist}
+	return spec.For(t)
 }
 
 func expectELF(path string, t triple.Triple, wantStatic *bool) error {

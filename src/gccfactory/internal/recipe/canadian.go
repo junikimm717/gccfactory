@@ -361,11 +361,19 @@ func (b *builder) verifyCanadian(ctx context.Context) error {
 		return nil
 	}
 	b.step("verify")
+	emHost, err := emulatorFor(b.e, b.cfg.Host)
+	if err != nil {
+		return err
+	}
+	emTarget, err := emulatorFor(b.e, b.cfg.Target)
+	if err != nil {
+		return err
+	}
 	// Host binaries are static, so no host sysroot is needed; naming cross:<H>'s
 	// anyway keeps verification working if that ever changes.
 	rep := ensure.CanadianToolchain(ctx, ensureRunner{b.r}, b.verifyWork(), b.cfg.Stage,
 		b.cfg.Host, b.cfg.Target,
-		qemuFor(b.e.QemuHost, b.cfg.Host), qemuFor(b.e.QemuTarget, b.cfg.Target),
+		emHost, emTarget,
 		ensure.WithHostSysroot(filepath.Join(b.cfg.CrossH, b.cfg.Host.Raw)))
 	b.e.Log.Info("verification report", "subject", rep.Subject, "ok", rep.OK())
 	return reportErr(rep)

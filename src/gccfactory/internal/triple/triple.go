@@ -71,6 +71,7 @@ type spec struct {
 	data    byte   // 1 = little endian, 2 = big endian
 	qemu    string // qemu-user suffix
 	ldso    string // musl dynamic linker basename suffix
+	oci     string // OCI/docker platform, "" where none is defined
 	gcc     []string
 }
 
@@ -87,17 +88,17 @@ const (
 )
 
 var specs = map[string]spec{
-	"aarch64-linux-musl":     {emAARCH64, 2, 1, "aarch64", "aarch64", nil},
-	"x86_64-linux-musl":      {emX86_64, 2, 1, "x86_64", "x86_64", nil},
-	"i386-linux-musl":        {emI386, 1, 1, "i386", "i386", []string{"--with-arch=i486", "--with-tune=generic"}},
-	"arm-linux-musleabi":     {emARM, 1, 1, "arm", "arm", []string{"--with-arch=armv4t", "--with-float=soft"}},
-	"arm-linux-musleabihf":   {emARM, 1, 1, "arm", "armhf", []string{"--with-arch=armv7-a", "--with-fpu=vfpv3-d16", "--with-float=hard", "--with-mode=thumb"}},
-	"mips64-linux-musl":      {emMIPS, 2, 2, "mips64", "mips64", []string{"--with-arch=mips64r2", "--with-abi=64", "--with-float=hard"}},
-	"powerpc64-linux-musl":   {emPPC64, 2, 2, "ppc64", "powerpc64", []string{"--with-abi=elfv2", "--enable-secureplt", "--enable-decimal-float=no"}},
-	"powerpc64le-linux-musl": {emPPC64, 2, 1, "ppc64le", "powerpc64le", []string{"--with-abi=elfv2", "--enable-secureplt", "--enable-decimal-float=no"}},
-	"riscv32-linux-musl":     {emRISCV, 1, 1, "riscv32", "riscv32", []string{"--with-arch=rv32gc", "--with-abi=ilp32d"}},
-	"riscv64-linux-musl":     {emRISCV, 2, 1, "riscv64", "riscv64", []string{"--with-arch=rv64gc", "--with-abi=lp64d"}},
-	"s390x-linux-musl":       {emS390, 2, 2, "s390x", "s390x", []string{"--with-arch=z196", "--with-tune=zEC12", "--with-long-double-128"}},
+	"aarch64-linux-musl":     {emAARCH64, 2, 1, "aarch64", "aarch64", "linux/arm64", nil},
+	"x86_64-linux-musl":      {emX86_64, 2, 1, "x86_64", "x86_64", "linux/amd64", nil},
+	"i386-linux-musl":        {emI386, 1, 1, "i386", "i386", "linux/386", []string{"--with-arch=i486", "--with-tune=generic"}},
+	"arm-linux-musleabi":     {emARM, 1, 1, "arm", "arm", "linux/arm/v6", []string{"--with-arch=armv4t", "--with-float=soft"}},
+	"arm-linux-musleabihf":   {emARM, 1, 1, "arm", "armhf", "linux/arm/v7", []string{"--with-arch=armv7-a", "--with-fpu=vfpv3-d16", "--with-float=hard", "--with-mode=thumb"}},
+	"mips64-linux-musl":      {emMIPS, 2, 2, "mips64", "mips64", "linux/mips64", []string{"--with-arch=mips64r2", "--with-abi=64", "--with-float=hard"}},
+	"powerpc64-linux-musl":   {emPPC64, 2, 2, "ppc64", "powerpc64", "linux/ppc64", []string{"--with-abi=elfv2", "--enable-secureplt", "--enable-decimal-float=no"}},
+	"powerpc64le-linux-musl": {emPPC64, 2, 1, "ppc64le", "powerpc64le", "linux/ppc64le", []string{"--with-abi=elfv2", "--enable-secureplt", "--enable-decimal-float=no"}},
+	"riscv32-linux-musl":     {emRISCV, 1, 1, "riscv32", "riscv32", "", []string{"--with-arch=rv32gc", "--with-abi=ilp32d"}},
+	"riscv64-linux-musl":     {emRISCV, 2, 1, "riscv64", "riscv64", "linux/riscv64", []string{"--with-arch=rv64gc", "--with-abi=lp64d"}},
+	"s390x-linux-musl":       {emS390, 2, 2, "s390x", "s390x", "linux/s390x", []string{"--with-arch=z196", "--with-tune=zEC12", "--with-long-double-128"}},
 }
 
 func Parse(s string) (Triple, error) {
@@ -181,6 +182,11 @@ func (t Triple) ELF() (machine uint16, class, data byte, ok bool) {
 
 // QemuName is the qemu-user binary suffix, e.g. "x86_64" for qemu-x86_64.
 func (t Triple) QemuName() string { return specs[t.Raw].qemu }
+
+// Platform is the OCI/docker platform that can run t, for --exec-wrapper
+// templates. riscv32 has none: OCI never defined one, so a wrapper for it has
+// to name its own runner.
+func (t Triple) Platform() string { return specs[t.Raw].oci }
 
 // DynamicLinker is the absolute path (inside the sysroot) of musl's ld.so.
 func (t Triple) DynamicLinker() string {

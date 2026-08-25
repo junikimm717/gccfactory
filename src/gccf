@@ -8,7 +8,7 @@
 # This is a Linux tool. It needs go, a native toolchain, and qemu-user-static.
 # Not on Linux? Launch a container yourself; `docker/run` is one way.
 #
-# Environment: GCCF_DIST GCCF_JOBS GCCF_WORKERS GCCF_QEMU_DIR
+# Environment: GCCF_DIST GCCF_JOBS GCCF_WORKERS GCCF_QEMU_DIR GCCF_EXEC_WRAPPER
 set -euo pipefail
 
 if [[ $(uname -s) != Linux ]]; then
@@ -43,9 +43,15 @@ fi
 
 # qemu-user-static lives in /usr/bin on debian; gccfactory appends -<arch>-static.
 QEMU_DIR=${GCCF_QEMU_DIR:-/usr/bin}
-[[ -x $QEMU_DIR/qemu-x86_64-static ]] || \
-  echo "gccf: warning: no $QEMU_DIR/qemu-x86_64-static; 'verify' will not be able to run host binaries" >&2
+EXEC_WRAPPER=${GCCF_EXEC_WRAPPER:-}
+args=(--dist "$DIST" --qemu-dir "$QEMU_DIR")
+if [[ -n $EXEC_WRAPPER ]]; then
+  args+=(--exec-wrapper "$EXEC_WRAPPER")
+elif [[ ! -x $QEMU_DIR/qemu-x86_64-static ]]; then
+  echo "gccf: warning: no $QEMU_DIR/qemu-x86_64-static; 'verify' will not be able to" >&2
+  echo "      run host binaries. Set GCCF_EXEC_WRAPPER to run them another way." >&2
+fi
 
 # GCCF_JOBS / GCCF_WORKERS are read by gccfactory itself as flag defaults, so
 # they just need to be in the environment; explicit -j/--workers still win.
-exec "$BIN" --dist "$DIST" --qemu-dir "$QEMU_DIR" "$@"
+exec "$BIN" "${args[@]}" "$@"

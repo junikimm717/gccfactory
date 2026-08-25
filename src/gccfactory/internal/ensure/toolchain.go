@@ -149,7 +149,7 @@ func NativeToolchain(ctx context.Context, r Runner, workDir, cc, cxx string, opt
 // CrossToolchain verifies a BUILD->TARGET toolchain at prefix: its binaries
 // must be BUILD binaries, the tool surface must be complete, and the probe
 // suite must compile for t and run correctly under qemu.
-func CrossToolchain(ctx context.Context, r Runner, workDir, prefix string, t triple.Triple, qemu string, opts ...Option) *Report {
+func CrossToolchain(ctx context.Context, r Runner, workDir, prefix string, t triple.Triple, em Emulator, opts ...Option) *Report {
 	o := newOptions(opts)
 	rep := NewReport(fmt.Sprintf("cross toolchain %s at %s", t, prefix))
 	defer timeit(rep)()
@@ -175,15 +175,14 @@ func CrossToolchain(ctx context.Context, r Runner, workDir, prefix string, t tri
 		cc: []string{gcc}, cxx: []string{gxx}, env: map[string]string{},
 		target: &t, prefix: prefix,
 	}
-	if qemu == "" {
-		rep.Failf("qemu", "no qemu binary given for %s; cannot run the probe suite", t)
+	if !em.Usable() {
+		rep.Failf(NoEmulator(t))
 		h.norun = true
 	} else {
-		h.runPrefix = []string{qemu, "-L", sysroot}
-		h.runEnv = map[string]string{"QEMU_LD_PREFIX": sysroot}
-		if ld := LoaderPath(sysroot, t); ld != "" {
-			h.runFallback = []string{qemu, ld}
-		}
+		h.runPrefix, h.runEnv = em.Launch(sysroot, t, false)
+		h.runFallback = em.Loader(sysroot, t)
+		h.fallbackNote = em.FallbackNote()
+		h.loaderForDynamic = em.LoaderForDynamic()
 	}
 	if !h.version(ctx, "gcc-runs", []string{gcc, "-dumpmachine"}, t.Raw) {
 		return rep
@@ -198,7 +197,7 @@ func CrossToolchain(ctx context.Context, r Runner, workDir, prefix string, t tri
 // CanadianToolchain is the real proof: every binary in <prefix>/bin is a HOST
 // ELF, those binaries run under qemuHost, what they emit is a TARGET ELF, and
 // that runs correctly under qemuTarget.
-func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, host, t triple.Triple, qemuHost, qemuTarget string, opts ...Option) *Report {
+func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, host, t triple.Triple, emHost, emTarget Emulator, opts ...Option) *Report {
 	o := newOptions(append([]Option{WithUnprefixedTools(UnprefixedTools...)}, opts...))
 	rep := NewReport(fmt.Sprintf("canadian toolchain host=%s target=%s at %s", host, t, prefix))
 	defer timeit(rep)()
@@ -219,9 +218,12 @@ func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, ho
 	if !mustExec(rep, gcc) || !mustExec(rep, gxx) {
 		return rep
 	}
-	if qemuHost == "" || qemuTarget == "" {
-		rep.Failf("qemu", "need both a host qemu (%s) and a target qemu (%s); got %q and %q",
-			strings.Join(QemuNames(host), "/"), strings.Join(QemuNames(t), "/"), qemuHost, qemuTarget)
+	if !emHost.Usable() {
+		rep.Failf(NoEmulator(host))
+		return rep
+	}
+	if !emTarget.Usable() {
+		rep.Failf(NoEmulator(t))
 		return rep
 	}
 
@@ -235,14 +237,14 @@ func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, ho
 	if hostSysroot == "" {
 		hostSysroot = guessHostSysroot(prefix, host)
 	}
-	qemuArgs := []string{qemuHost}
-	hostEnv := map[string]string{}
+	var qemuArgs []string
+	var hostEnv map[string]string
 	switch {
 	case hostInfo.Static:
+		qemuArgs, hostEnv = emHost.Launch("", host, true)
 		rep.Pass("host-link-mode", "%s is static; no host sysroot needed", filepath.Base(gcc))
 	case hostSysroot != "":
-		qemuArgs = append(qemuArgs, "-L", hostSysroot)
-		hostEnv["QEMU_LD_PREFIX"] = hostSysroot
+		qemuArgs, hostEnv = emHost.Launch(hostSysroot, host, false)
 		rep.Pass("host-link-mode", "%s is dynamic (%s); using host sysroot %s",
 			filepath.Base(gcc), hostInfo.Interp, hostSysroot)
 	default:
@@ -257,18 +259,17 @@ func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, ho
 		cc:  append(append([]string(nil), qemuArgs...), gcc),
 		cxx: append(append([]string(nil), qemuArgs...), gxx),
 		env: hostEnv, target: &t, prefix: prefix,
-		launch:    append([]string(nil), qemuArgs...),
-		runPrefix: []string{qemuTarget, "-L", targetSysroot},
-		runEnv:    map[string]string{"QEMU_LD_PREFIX": targetSysroot},
+		launch: append([]string(nil), qemuArgs...),
 	}
-	if ld := LoaderPath(targetSysroot, t); ld != "" {
-		h.runFallback = []string{qemuTarget, ld}
-	}
+	h.runPrefix, h.runEnv = emTarget.Launch(targetSysroot, t, false)
+	h.runFallback = emTarget.Loader(targetSysroot, t)
+	h.fallbackNote = emTarget.FallbackNote()
+	h.loaderForDynamic = emTarget.LoaderForDynamic()
 
 	// Staged preflight so a systemic problem is reported once, not 40 times.
 	if !h.version(ctx, "gcc-runs-on-host", append(append([]string(nil), h.cc...), "-dumpmachine"), t.Raw) {
 		h.rep.Failf("preflight", "the toolchain's gcc could not even print its target under %s;"+
-			" every probe below would fail for the same reason", filepath.Base(qemuHost))
+			" every probe below would fail for the same reason", emHost.Name())
 		return rep
 	}
 	if !h.progNames(ctx, prefix, t) {

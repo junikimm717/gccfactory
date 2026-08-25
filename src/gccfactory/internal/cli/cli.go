@@ -18,16 +18,19 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/google/shlex"
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/core"
 )
 
 type Global struct {
-	Dist      string // abs path to dist/
-	QemuDir   string // dir holding qemu-<arch>-static, or a template with %s
-	ColorWhen string
-	Verbose   bool
+	Dist        string   // abs path to dist/
+	QemuDir     string   // dir holding qemu-<arch>-static, or a template with %s
+	ExecWrapper []string // argv template overriding QemuDir; see resolve
+	ColorWhen   string
+	Verbose     bool
 
-	repoRoot string
+	execWrapperRaw string
+	repoRoot       string
 }
 
 type command struct {
@@ -143,7 +146,12 @@ func (g *Global) register(fs *flag.FlagSet) {
 	fs.StringVar(&g.Dist, "dist", g.Dist,
 		"build tree + artifact root (default: <repo>/dist; the shim sets this)")
 	fs.StringVar(&g.QemuDir, "qemu-dir", g.QemuDir,
-		"directory holding qemu-<arch>-static, or a path template containing %s")
+		"directory holding qemu-<arch>-static, or a path template containing %s;"+
+			" Linux only (needs a Linux kernel), see --exec-wrapper for macOS")
+	fs.StringVar(&g.execWrapperRaw, "exec-wrapper", g.execWrapperRaw,
+		"argv template (shell-quoted) that wraps a foreign-arch binary to make it"+
+			" runnable, overriding --qemu-dir; placeholders {triple} {arch} {platform}"+
+			` {dist}, e.g. "docker run --rm -v {dist}:{dist} --platform {platform} alpine"`)
 	fs.StringVar(&g.ColorWhen, "color", g.ColorWhen,
 		"colorize output: auto|always|never")
 	fs.BoolVar(&g.Verbose, "v", g.Verbose, "verbose: stream every command's output to the terminal")
@@ -202,6 +210,13 @@ func (g *Global) resolve() error {
 	if g.QemuDir == "" {
 		g.QemuDir = "/usr/bin"
 	}
+	if g.execWrapperRaw != "" {
+		argv, err := shlex.Split(g.execWrapperRaw)
+		if err != nil {
+			return usagef("--exec-wrapper: %v", err)
+		}
+		g.ExecWrapper = argv
+	}
 	setColor(g.ColorWhen)
 	if g.Dist == "" {
 		root, err := repoRoot()
@@ -229,13 +244,13 @@ func (g *Global) env(jobs, workers int) (*core.Env, func(), error) {
 		return nil, nil, fmt.Errorf("open run log under %s: %w", filepath.Join(g.Dist, "logs"), err)
 	}
 	e := &core.Env{
-		Dist:       g.Dist,
-		RepoRoot:   g.repoRoot,
-		Jobs:       jobs,
-		MaxWorkers: workers,
-		QemuHost:   qemuTemplate(g.QemuDir),
-		QemuTarget: qemuTemplate(g.QemuDir),
-		Log:        log,
+		Dist:         g.Dist,
+		RepoRoot:     g.repoRoot,
+		Jobs:         jobs,
+		MaxWorkers:   workers,
+		QemuTemplate: qemuTemplate(g.QemuDir),
+		ExecWrapper:  g.ExecWrapper,
+		Log:          log,
 	}
 	if err := e.EnsureDirs(); err != nil {
 		closeLogger(log)

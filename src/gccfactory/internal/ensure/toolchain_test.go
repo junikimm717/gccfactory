@@ -194,7 +194,7 @@ func TestCanadianToolchainHappyPath(t *testing.T) {
 	r := newFakeRunner(t, f)
 
 	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
-		"/usr/bin/qemu-x86_64", "/usr/bin/qemu-aarch64")
+		QemuEmulator("/usr/bin/qemu-x86_64"), QemuEmulator("/usr/bin/qemu-aarch64"))
 	if !rep.OK() {
 		t.Fatalf("expected a clean report:\n%s", rep)
 	}
@@ -243,7 +243,7 @@ func TestCanadianToolchainCatchesBadStdout(t *testing.T) {
 	r.badOut = "tls"
 
 	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
-		"qemu-x86_64", "qemu-riscv64", WithOptLevels("-O2"))
+		QemuEmulator("qemu-x86_64"), QemuEmulator("qemu-riscv64"), WithOptLevels("-O2"))
 	if rep.OK() {
 		t.Fatal("a probe printing the wrong thing must fail the report")
 	}
@@ -267,7 +267,7 @@ func TestCanadianToolchainCatchesCompileFailure(t *testing.T) {
 	r.failComp = "hello"
 
 	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
-		"qemu-aarch64", "qemu-ppc64", WithOptLevels("-O0"))
+		QemuEmulator("qemu-aarch64"), QemuEmulator("qemu-ppc64"), WithOptLevels("-O0"))
 	if rep.OK() {
 		t.Fatal("a failing compile must fail the report")
 	}
@@ -351,7 +351,7 @@ func TestCrossToolchainDoesNotRequireMake(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := newFakeRunner(t, f)
-	rep := CrossToolchain(context.Background(), r, t.TempDir(), f.prefix, target, "/usr/bin/qemu-x86_64",
+	rep := CrossToolchain(context.Background(), r, t.TempDir(), f.prefix, target, QemuEmulator("/usr/bin/qemu-x86_64"),
 		WithOptLevels("-O0"), WithProbes(Probes()[0]))
 	for _, c := range rep.Failures() {
 		if c.Name == "tools" {
@@ -383,7 +383,7 @@ func TestToolDirMustBeHostArch(t *testing.T) {
 	}
 
 	full := CanadianToolchain(context.Background(), newFakeRunner(t, f), t.TempDir(), f.prefix,
-		host, target, "qemu-x86_64", "qemu-aarch64", WithOptLevels("-O0"))
+		host, target, QemuEmulator("qemu-x86_64"), QemuEmulator("qemu-aarch64"), WithOptLevels("-O0"))
 	if !failed(full, "tooldir-elf") {
 		t.Fatalf("CanadianToolchain must inspect the tooldir:\n%s", full)
 	}
@@ -399,7 +399,7 @@ func TestMissingToolDirAsAbortsEarly(t *testing.T) {
 		t.Fatal(err)
 	}
 	rep := CanadianToolchain(context.Background(), newFakeRunner(t, f), t.TempDir(), f.prefix,
-		host, target, "qemu-aarch64", "qemu-x86_64")
+		host, target, QemuEmulator("qemu-aarch64"), QemuEmulator("qemu-x86_64"))
 	if !failed(rep, "tooldir-as-ld") {
 		t.Fatalf("missing as must fail:\n%s", rep)
 	}
@@ -415,7 +415,7 @@ func TestMissingToolDirAsAbortsEarly(t *testing.T) {
 		}
 	}
 
-	crep := CrossToolchain(context.Background(), newFakeRunner(t, f), t.TempDir(), f.prefix, target, "qemu-x86_64")
+	crep := CrossToolchain(context.Background(), newFakeRunner(t, f), t.TempDir(), f.prefix, target, QemuEmulator("qemu-x86_64"))
 	if !failed(crep, "tooldir-as-ld") {
 		t.Fatalf("cross must check the tooldir too:\n%s", crep)
 	}
@@ -431,7 +431,7 @@ func TestGccMustResolveItsAssembler(t *testing.T) {
 	r.bareProg = "as"
 
 	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
-		"qemu-x86_64", "qemu-s390x")
+		QemuEmulator("qemu-x86_64"), QemuEmulator("qemu-s390x"))
 	if !failed(rep, "gcc-finds-as") {
 		t.Fatalf("a bare \"as\" must fail:\n%s", rep)
 	}
@@ -449,7 +449,7 @@ func TestGccMustResolveItsAssembler(t *testing.T) {
 
 	// The happy path resolves inside the prefix and says where.
 	good := CanadianToolchain(context.Background(), newFakeRunner(t, f), t.TempDir(), f.prefix,
-		host, target, "qemu-x86_64", "qemu-s390x", WithOptLevels("-O0"))
+		host, target, QemuEmulator("qemu-x86_64"), QemuEmulator("qemu-s390x"), WithOptLevels("-O0"))
 	if !good.OK() {
 		t.Fatalf("%s", good)
 	}
@@ -526,7 +526,7 @@ func TestLoaderFallbackIsUsedAndReported(t *testing.T) {
 	r.loaderBroken = true
 
 	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
-		"qemu-x86_64", "qemu-aarch64", WithOptLevels("-O2"), WithProbes(Probes()[0]))
+		QemuEmulator("qemu-x86_64"), QemuEmulator("qemu-aarch64"), WithOptLevels("-O2"), WithProbes(Probes()[0]))
 	if !rep.OK() {
 		t.Fatalf("the fallback must rescue the run:\n%s", rep)
 	}
@@ -563,7 +563,7 @@ func TestLoaderFallbackIsUsedAndReported(t *testing.T) {
 	r2 := newFakeRunner(t, f2)
 	r2.loaderBroken = true
 	rep2 := CanadianToolchain(context.Background(), r2, t.TempDir(), f2.prefix, host, target,
-		"qemu-x86_64", "qemu-aarch64", WithOptLevels("-O2"), WithProbes(Probes()[0]))
+		QemuEmulator("qemu-x86_64"), QemuEmulator("qemu-aarch64"), WithOptLevels("-O2"), WithProbes(Probes()[0]))
 	if rep2.OK() {
 		t.Fatalf("with no loader at all this must fail:\n%s", rep2)
 	}
@@ -611,7 +611,7 @@ func TestLTOArchiveDetectsPluginlessNm(t *testing.T) {
 	r.noSymbols = true
 
 	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
-		"qemu-x86_64", "qemu-aarch64", WithOptLevels("-O2"), WithProbes(Probes()...))
+		QemuEmulator("qemu-x86_64"), QemuEmulator("qemu-aarch64"), WithOptLevels("-O2"), WithProbes(Probes()...))
 	if !failed(rep, "gcc-nm-lto") {
 		t.Fatalf("gcc-nm listing nothing must fail:\n%s", rep)
 	}

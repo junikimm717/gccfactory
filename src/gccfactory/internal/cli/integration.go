@@ -86,12 +86,22 @@ func checkNative(ctx context.Context, r *core.Runner, work, cc, cxx string) *ens
 	return ensure.NativeToolchain(ctx, ensureRunner{r}, work, cc, cxx)
 }
 
-func checkCross(ctx context.Context, r *core.Runner, work, prefix string, t triple.Triple, qemu string) *ensure.Report {
-	return ensure.CrossToolchain(ctx, ensureRunner{r}, work, prefix, t, qemu)
+func checkCross(ctx context.Context, r *core.Runner, work, prefix string, t triple.Triple, em ensure.Emulator) *ensure.Report {
+	return ensure.CrossToolchain(ctx, ensureRunner{r}, work, prefix, t, em)
 }
 
-func checkCanadian(ctx context.Context, r *core.Runner, work, prefix string, h, t triple.Triple, qemuHost, qemuTarget string) *ensure.Report {
-	return ensure.CanadianToolchain(ctx, ensureRunner{r}, work, prefix, h, t, qemuHost, qemuTarget)
+func checkCanadian(ctx context.Context, r *core.Runner, work, prefix string, h, t triple.Triple, emHost, emTarget ensure.Emulator) *ensure.Report {
+	return ensure.CanadianToolchain(ctx, ensureRunner{r}, work, prefix, h, t, emHost, emTarget)
+}
+
+// emulatorFor builds the Emulator that can run t: an --exec-wrapper if one is
+// configured (expanded straight through EmulatorSpec, which never searches),
+// else qemu-user resolved via qemuPath.
+func emulatorFor(e *core.Env, t triple.Triple) (ensure.Emulator, error) {
+	if len(e.ExecWrapper) > 0 {
+		return ensure.EmulatorSpec{Wrapper: e.ExecWrapper, Dist: e.Dist}.For(t)
+	}
+	return ensure.QemuEmulator(qemuPath(e.QemuTemplate, t)), nil
 }
 
 // --qemu-dir may be given either as a directory (/usr/bin) or as a path
@@ -108,8 +118,8 @@ func qemuPath(dirOrTemplate string, t triple.Triple) string {
 	return filepath.Join(dirOrTemplate, "qemu-"+t.QemuName()+"-static")
 }
 
-// qemuTemplate is what we store in core.Env.QemuHost/QemuTarget: a printf
-// template with a single %s for triple.QemuName().
+// qemuTemplate is what we store in core.Env.QemuTemplate: a printf template
+// with a single %s for triple.QemuName().
 func qemuTemplate(dirOrTemplate string) string {
 	if strings.Contains(dirOrTemplate, "%s") {
 		return dirOrTemplate

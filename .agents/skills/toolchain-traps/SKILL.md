@@ -505,6 +505,37 @@ static and dynamic variants where debian ships only the static one. The test
 hardcodes the debian assumption. Verification itself resolves qemu correctly
 on both.
 
+## `--exec-wrapper` probes fail three different ways
+
+Running probes through a non-qemu wrapper (`docker run`, or `env` to test the
+plumbing) hits three traps in a row. All three are fixed in
+`ensure.Emulator`; this is why the shape is what it is.
+
+1. **`Not a valid dynamic program`** on the static probes. One launch prefix
+   runs every probe and staticness is not known when it is built, so a wrapper
+   must not bake the loader in. qemu gets away with `-L <sysroot>` because it
+   ignores it for a static binary; `<loader> ./probe` does not.
+
+2. **`No such file or directory` (exit 127)** on the dynamic probes, and the
+   retry never fires. A bare exec of a dynamic program fails with plain ENOENT
+   — indistinguishable from the program being absent, so `loaderMissing()`
+   (which matches *qemu's* wording) can't see it. Decide from the ELF instead:
+   `hasInterp(prog)` picks the loader form up front.
+
+3. **`Error relocating ./probe: _ZSt4cout: symbol not found`** on the C++
+   probes. The loader now runs but cannot find `libstdc++.so.6`. Fix with
+   `<loader> --library-path <sysroot>/lib ./probe`. **Not** `LD_LIBRARY_PATH`:
+   that would also apply to the wrapper process, and `docker` is not a musl
+   program.
+
+Prove the whole path on Linux without any container — `env` is a real wrapper
+that just execs:
+
+    ./src/gccf --exec-wrapper env verify --host x86_64-linux-musl --target x86_64-linux-musl
+
+For a native-arch target this genuinely runs every probe with qemu nowhere in
+the picture, so it is the cheapest honest test that the escape hatch works.
+
 ## Verifying you actually have a canadian toolchain
 
 Architecture checks alone are not sufficient — check the loader too, since a

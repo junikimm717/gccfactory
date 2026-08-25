@@ -252,8 +252,11 @@ func (b *builder) verifyCross(ctx context.Context) error {
 		return nil
 	}
 	b.step("verify")
-	qemu := qemuFor(b.e.QemuTarget, b.cfg.Target)
-	rep := ensure.CrossToolchain(ctx, ensureRunner{b.r}, b.verifyWork(), b.cfg.Stage, b.cfg.Target, qemu)
+	em, err := emulatorFor(b.e, b.cfg.Target)
+	if err != nil {
+		return err
+	}
+	rep := ensure.CrossToolchain(ctx, ensureRunner{b.r}, b.verifyWork(), b.cfg.Stage, b.cfg.Target, em)
 	b.e.Log.Info("verification report", "subject", rep.Subject, "ok", rep.OK())
 	return reportErr(rep)
 }
