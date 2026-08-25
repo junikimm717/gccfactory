@@ -105,24 +105,37 @@ jobs:
           sha256sum gccfactory-linux-* > SHA256SUMS
           cat SHA256SUMS
 
-      # Recreated rather than edited: a rolling release should carry the assets
-      # of exactly one commit, and `gh release upload --clobber` would leave
-      # stale assets behind if a future build ever emits a different set.
+      # Updated in place, never deleted and recreated: the draft's URL is tied
+      # to its release id, so recreating hands out a new link every push. Assets
+      # not in this build are pruned explicitly, which is the only thing the
+      # delete was actually buying.
       - name: republish the rolling draft
+        working-directory: dl
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete rolling --yes --cleanup-tag || true
-          gh release create rolling \
-            --draft \
-            --target "${GITHUB_SHA}" \
-            --title "rolling (${GITHUB_SHA:0:12})" \
-            --notes "Statically linked build of ${GITHUB_SHA}.
+          title="rolling (${GITHUB_SHA:0:12})"
+          notes="Statically linked build of ${GITHUB_SHA}.
 
-          Needs only a gcc toolchain and coreutils on the target box. Pass
-          \`--dist\` and \`--qemu-dir\` explicitly; the repo checkout and the
-          \`src/gccf\` shim are conveniences, not requirements.
+          Needs only a gcc toolchain and coreutils on the target box. GitHub
+          release assets do not carry the executable bit, so chmod +x after
+          downloading. Pass \`--dist\` and \`--qemu-dir\` explicitly; the repo
+          checkout and the \`src/gccf\` shim are conveniences, not requirements.
 
               ./gccfactory-linux-amd64 --dist /var/tmp/dist --qemu-dir /usr/bin \\
-                build --host x86_64-linux-musl --target riscv64-linux-musl" \
-            dl/gccfactory-linux-amd64 dl/gccfactory-linux-arm64 dl/SHA256SUMS
+                build --host x86_64-linux-musl --target riscv64-linux-musl"
+
+          if gh release view rolling >/dev/null 2>&1; then
+            gh release edit rolling --draft --target "${GITHUB_SHA}" \
+              --title "$title" --notes "$notes"
+            for a in $(gh release view rolling --json assets \
+                         --jq '.assets[].name'); do
+              [ -f "$a" ] || gh release delete-asset rolling "$a" --yes
+            done
+            gh release upload rolling --clobber gccfactory-linux-amd64 \
+              gccfactory-linux-arm64 SHA256SUMS
+          else
+            gh release create rolling --draft --target "${GITHUB_SHA}" \
+              --title "$title" --notes "$notes" \
+              gccfactory-linux-amd64 gccfactory-linux-arm64 SHA256SUMS
+          fi
