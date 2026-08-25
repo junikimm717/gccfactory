@@ -67,9 +67,8 @@ func TestQemuNames(t *testing.T) {
 	}
 }
 
-// TestCrossToolchainNoEmulator: with no way to execute target binaries we
-// still compile everything and check the ELF identity, but say plainly that
-// nothing was executed.
+// With no way to execute target binaries we still compile everything and
+// check the ELF identity, but say plainly that nothing was executed.
 func TestCrossToolchainNoEmulator(t *testing.T) {
 	host := triple.MustParse("x86_64-linux-musl")
 	target := triple.MustParse("i386-linux-musl")

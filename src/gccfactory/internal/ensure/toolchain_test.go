@@ -199,7 +199,6 @@ func TestCanadianToolchainHappyPath(t *testing.T) {
 		t.Fatalf("expected a clean report:\n%s", rep)
 	}
 
-	// The full matrix: every probe at every -O level, plus -static where allowed.
 	wantProbeChecks := 0
 	for _, p := range Probes() {
 		wantProbeChecks += 2 // -O0, -O2 dynamic
@@ -217,7 +216,6 @@ func TestCanadianToolchainHappyPath(t *testing.T) {
 		t.Errorf("ran %d probe cells, want %d\n%s", got, wantProbeChecks, rep)
 	}
 
-	// The compiler must have been invoked through the host qemu.
 	var sawQemuCompile, sawQemuRun bool
 	for _, c := range r.cmds {
 		if c.Args[0] == "/usr/bin/qemu-x86_64" && has(c.Args, "-o") {

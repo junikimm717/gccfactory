@@ -24,7 +24,7 @@ type Probe struct {
 	Files   []string
 	Lang    string   // "c" | "c++"
 	ExtraCC []string // extra compiler/linker flags, e.g. {"-lm"}
-	Want    string   // exact expected stdout
+	Want    string
 	// Static also builds and runs the probe with -static.
 	Static bool
 	// Shared marks a probe that builds a shared library and dlopens it; such a
@@ -103,8 +103,8 @@ func staticPIESkip(t triple.Triple) string {
 	return ""
 }
 
-// Probes returns the probe suite, in the order it should be run (cheapest and
-// most fundamental first, so a broken toolchain fails fast and legibly).
+// The order is cheapest and most fundamental first, so a broken toolchain
+// fails fast and legibly.
 func Probes() []Probe {
 	return []Probe{
 		{

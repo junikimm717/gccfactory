@@ -86,7 +86,6 @@ func WithProbes(ps ...Probe) Option {
 	return func(o *options) { o.probes = append([]Probe(nil), ps...) }
 }
 
-// WithUnprefixedTools sets which unprefixed binaries <prefix>/bin must ship.
 // CanadianToolchain requires UnprefixedTools ("make"); CrossToolchain requires
 // none, because make for HOST is built by a cross toolchain, not shipped in
 // one.
@@ -114,8 +113,7 @@ func newOptions(opts []Option) *options {
 	return o
 }
 
-// NativeToolchain checks that the BUILD compiler can compile and run C and
-// C++. Produced binaries are not ELF-asserted (BUILD is whatever the container
+// Produced binaries are not ELF-asserted (BUILD is whatever the container
 // is) and -static is off by default because a glibc build machine usually has
 // no static libc installed.
 func NativeToolchain(ctx context.Context, r Runner, workDir, cc, cxx string, opts ...Option) *Report {
@@ -202,8 +200,6 @@ func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, ho
 	rep := NewReport(fmt.Sprintf("canadian toolchain host=%s target=%s at %s", host, t, prefix))
 	defer timeit(rep)()
 
-	// (a) surface + host ELF identity of every shipped binary, including the
-	// second copy of as/ld/... in the tooldir that gcc actually execs.
 	rep.Absorb("", ToolSurface(prefix, t, o.unprefixed...))
 	rep.Absorb("", SysrootReport(prefix, t))
 	rep.Absorb("", HostBinDirReport(prefix, host))
@@ -227,7 +223,6 @@ func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, ho
 		return rep
 	}
 
-	// (b) how do we have to launch a HOST binary?
 	hostInfo, err := ReadELF(gcc)
 	if err != nil {
 		rep.Fail("host-gcc-elf", err, "cannot read %s", gcc)
@@ -454,16 +449,13 @@ func LTOPluginReport(prefix string, t triple.Triple) *Report {
 	return rep
 }
 
-// HostBinDirReport asserts every regular file in <prefix>/bin is an ELF for
-// host. This is the check that catches a "canadian" build which actually
-// produced BUILD binaries.
+// This is the check that catches a "canadian" build which actually produced
+// BUILD binaries.
 func HostBinDirReport(prefix string, host triple.Triple) *Report {
 	return elfDirReport("host binaries "+prefix, "bin-elf", filepath.Join(prefix, "bin"),
 		host.String()+" ELFs", func(p string) error { return ExpectELF(p, host, nil) })
 }
 
-// BuildBinDirReport asserts the toolchain's binaries match the machine we are
-// running on. It is skipped where our own executable is not an ELF (macOS).
 func BuildBinDirReport(prefix string) *Report {
 	ref, err := SelfELF()
 	if err != nil {

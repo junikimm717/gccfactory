@@ -157,8 +157,7 @@ func TestExpectELFMismatch(t *testing.T) {
 	}
 }
 
-// TestReadELFRealBinaries cross-compiles a tiny Go program for a few real
-// architectures; these are genuine linker output, not synthetic headers.
+// These are genuine linker output, not synthetic headers.
 func TestReadELFRealBinaries(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross builds are slow")

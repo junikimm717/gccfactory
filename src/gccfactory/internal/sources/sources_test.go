@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// TestEmbeddedDB is the regression guard on sources.json itself: a bad hand
-// edit (truncated sha, dropped mirror, duplicated name) must fail here rather
-// than three hours into a gcc build.
+// A regression guard on sources.json itself: a bad hand edit (truncated sha,
+// dropped mirror, duplicated name) must fail here rather than three hours
+// into a gcc build.
 func TestEmbeddedDB(t *testing.T) {
 	all := All()
 	if len(all) == 0 {

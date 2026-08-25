@@ -29,7 +29,7 @@ type harness struct {
 
 	runPrefix   []string          // argv prefix to execute a produced binary
 	runFallback []string          // as runPrefix, but invoking the musl loader directly
-	runEnv      map[string]string // env for run commands
+	runEnv      map[string]string
 	// How to describe a runFallback retry, "" when it is the normal path.
 	fallbackNote string
 	// Start a program that has a PT_INTERP via runFallback rather than
@@ -38,8 +38,6 @@ type harness struct {
 	norun            bool // compile and inspect only
 }
 
-// tool is the argv prefix for a target-prefixed toolchain program, launched
-// the same way the compiler is (under qemu for a canadian toolchain).
 func (h *harness) tool(name string) []string {
 	return append(append([]string(nil), h.launch...), Tool(h.prefix, *h.target, name))
 }
@@ -51,9 +49,8 @@ func (h *harness) compiler(lang string) []string {
 	return h.cc
 }
 
-// version runs a cheap identifying command and requires each want to appear in
-// its output. It is the first thing that fails when a toolchain cannot execute
-// at all, so its failure detail carries the qemu/binfmt hint.
+// It is the first thing that fails when a toolchain cannot execute at all, so
+// its failure detail carries the qemu/binfmt hint.
 func (h *harness) version(ctx context.Context, name string, argv []string, wants ...string) bool {
 	dir := h.mkdir("preflight")
 	start := time.Now()
@@ -75,10 +72,9 @@ func (h *harness) version(ctx context.Context, name string, argv []string, wants
 	return true
 }
 
-// progNames asks gcc where its assembler and linker are. A bare "as" means gcc
-// found nothing and will silently use whatever is on $PATH -- the toolchain is
-// not self-contained -- which is worth one decisive check instead of a wall of
-// mysterious probe failures.
+// A bare "as" means gcc found nothing and will silently use whatever is on
+// $PATH -- the toolchain is not self-contained -- which is worth one decisive
+// check instead of a wall of mysterious probe failures.
 func (h *harness) progNames(ctx context.Context, prefix string, t triple.Triple) bool {
 	dir := h.mkdir("preflight")
 	tooldir := ToolDir(prefix, t)

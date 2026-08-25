@@ -20,7 +20,6 @@ type Cmd struct {
 	Name string
 	// Always set by ensure.
 	Dir string
-	// Args[0] is the program.
 	Args []string
 	// EnvAdd is overlaid on the inherited environment.
 	EnvAdd map[string]string

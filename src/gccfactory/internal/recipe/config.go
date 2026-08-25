@@ -44,8 +44,7 @@ type buildCfg struct {
 	ForTargetTools bool
 }
 
-// HostTriple is what goes into --host: the real host on a canadian build, the
-// build machine everywhere else.
+// The real host on a canadian build, the build machine everywhere else.
 func (c buildCfg) HostTriple() string {
 	if c.Canadian {
 		return c.Host.Raw
@@ -317,7 +316,7 @@ func makeArgv(jobs int, v makeVars, args ...string) []string {
 var seedSysrootDirs = []string{"include", "lib"}
 
 // scratchSysrootScript makes a directory look like a sysroot gcc can build
-// against: usr folds back on itself, lib32 and lib64 fold onto lib.
+// against.
 const scratchSysrootScript = "ln -sfn . usr\nln -sfn lib lib32\nln -sfn lib lib64\n"
 
 // finalizeSysrootScript repairs a published sysroot: add the usr convention,

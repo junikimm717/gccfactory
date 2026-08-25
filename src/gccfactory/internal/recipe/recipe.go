@@ -148,8 +148,8 @@ func (b *builder) hardlinkSrc(ctx context.Context, pkg, artifact, as string) err
 	return b.run(ctx, "src-"+pkg, b.cfg.Work, nil, "cp", "-al", filepath.Join(artifact, srcTreeSubdir), dst)
 }
 
-// linkGCCSrcTree builds mcm's src_gcc, with gmp/mpc/mpfr/isl grafted on so
-// gcc's toplevel configures and builds them in-tree for whatever --host is in
+// The src_gcc layout is mcm's, with gmp/mpc/mpfr/isl grafted on so gcc's
+// toplevel configures and builds them in-tree for whatever --host is in
 // effect.
 func (b *builder) linkGCCSrcTree(ctx context.Context) error {
 	script := `

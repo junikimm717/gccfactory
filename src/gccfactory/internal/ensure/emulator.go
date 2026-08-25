@@ -40,8 +40,8 @@ func WrapperEmulator(argv []string) Emulator {
 	return Emulator{Argv: append([]string(nil), argv...)}
 }
 
-// Usable reports whether this emulator can run anything at all. The zero
-// Emulator cannot, and every caller must say so rather than silently skipping.
+// The zero Emulator cannot, and every caller must say so rather than
+// silently skipping.
 func (e Emulator) Usable() bool { return len(e.Argv) > 0 }
 
 func (e Emulator) Name() string {
