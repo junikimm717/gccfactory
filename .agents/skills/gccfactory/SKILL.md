@@ -29,6 +29,8 @@ src/gccfactory/          the go module
   internal/sources/      pinned tarballs + sha256 + embedded patches
   internal/recipe/       srctree / cross / hostmake / canadian jobs
   internal/ensure/       proves a toolchain actually works
+  internal/pack/         deterministic .tgz packaging of a finished canadian
+                         tree; the layout contract lives here
   internal/cli/          commands + the dependency-free picker TUI
 dist/                    everything generated; gitignored
 ```
@@ -49,6 +51,7 @@ everything is one of these:
 | why a specific configure flag is there | `internal/recipe/config.go` — one file, all flags |
 | the supported triples and their ELF identity | `internal/triple/triple.go` |
 | what a job did, in order | `dist/logs/jobs/<slug>/latest/commands.sh` |
+| how a toolchain is shipped | `gccf pack` -> `dist/tarballs/<HOST-ARCH>/<TARGET>-<cross\|native>.tgz` |
 
 The `Long:` field of each command in `internal/cli/*.go` is the real user
 documentation — it explains rationale, not just syntax. Read that before
@@ -217,6 +220,40 @@ cheaper than a build worker — so on a big machine raise it toward the core
 count; a serial 22-cell pass is ~45 minutes at ~2 min/cell. Reports are printed
 in matrix order however the work finishes, so `--workers` changes only the wall
 clock, never the output.
+
+## Shipping a toolchain
+
+`./src/gccf pack` turns each `dist/toolchains/out/<HOST>/<TARGET>/` into
+`dist/tarballs/<HOST-ARCH>/<TARGET>-<cross|native>.tgz` plus a `SHA256SUMS`.
+
+The naming rule is a **contract with the consumer**, not a convention:
+`-native` when the target's *architecture* (first field of the triple) equals
+the host's, `-cross` otherwise — so `arm-linux-musleabi` and
+`arm-linux-musleabihf` are both native on an arm host, while `i386` on `x86_64`
+is a cross. The tarball holds exactly **one** top-level directory with that
+same name, because the consumer does
+`tar -xzf X.tgz -C deps-<TARGET>` and then opens
+`deps-<TARGET>/<TARGET>-<tctype>/bin/<TARGET>-gcc`.
+
+Output is byte-reproducible (sorted entries, uid/gid/uname/gname zeroed, mtime
+pinned to the epoch, modes normalised to 0755/0644, gzip header with no
+timestamp), so a changed sha256 always means changed content. Symlinks and
+hardlinks are preserved — dereferencing the hardlinks alone would add ~30 MB
+per toolchain. Every tarball is reopened after writing and checked for the
+single top-level dir, an executable `bin/<TARGET>-gcc`, and `bin/make`.
+
+`bin/` also carries the unprefixed names (`cc`, `gcc`, `ld`, `ar`, ... — every
+`ensure.BinutilsTools` entry plus `cc`) as symlinks onto the `<TARGET>-`
+prefixed binaries, so `PATH=<top>/bin` is enough to drive the toolchain.
+Consumers used to mint these after unpacking — mimux's `cross/build` had a
+whole `makeinstall` step for it, and its workaround for the old wrapper layout
+is now dead. An alias is skipped where `bin/` already ships that name, which is
+what keeps `bin/make` the real make. They are added at **pack** time, not in
+the recipe, so adding one does not invalidate the 22-cell matrix.
+
+`pack` takes a **non-blocking** shared lease (`core.TryReadLease`) on each
+canadian slug, so it is safe to run while a build is in flight: a cell being
+republished right now is skipped rather than read mid-rename.
 
 ## The debug loop
 

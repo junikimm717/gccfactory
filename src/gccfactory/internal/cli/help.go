@@ -48,6 +48,7 @@ const globalHelp = `Global flags (accepted before or after the command):
 const layoutHelp = `Where things land under dist/:
   toolchains/out/<HOST>/<TARGET>/   the deliverable
   toolchains/cross/<TARGET>/        build->target toolchain (an intermediate)
+  tarballs/<HOST-ARCH>/             distributable .tgz + SHA256SUMS (see ` + "`pack`" + `)
   logs/jobs/<slug>/latest/          every command a job ran, with cwd + env
   logs/runs/<stamp>-<pid>/run.jsonl structured event stream for one invocation
   work/, .staging/, .trash/         scratch; safe to delete (see ` + "`clean`" + `)
@@ -73,6 +74,7 @@ func printHelp(w io.Writer, topic string) {
 		fmt.Fprintln(w, "  ./src/gccf build --host x86_64-linux-musl --target aarch64-linux-musl")
 		fmt.Fprintln(w, "  ./src/gccf status                what exists, what's stale, what's running")
 		fmt.Fprintln(w, "  ./src/gccf verify                prove the toolchains actually work")
+		fmt.Fprintln(w, "  ./src/gccf pack                  package them into distributable tarballs")
 		fmt.Fprintln(w)
 		io.WriteString(w, globalHelp+"\n")
 		fmt.Fprintln(w)

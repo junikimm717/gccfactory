@@ -3,7 +3,7 @@
 #
 #   ./src/gccf                 print the help (which is the documentation)
 #   ./src/gccf build           pick a host x target matrix and build it
-#   ./src/gccf status | verify | logs <slug> | shell <slug> | clean | sources
+#   ./src/gccf status | verify | pack | logs <slug> | shell <slug> | clean | sources
 #
 # This is a Linux tool. It needs go, a native toolchain, and qemu-user-static.
 # Not on Linux? Launch a container yourself; `docker/run` is one way.
