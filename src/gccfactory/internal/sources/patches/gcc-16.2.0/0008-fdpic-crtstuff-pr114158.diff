@@ -1,6 +1,6 @@
---- a/libgcc/crtstuff.c	2023-05-29 17:46:32.000000000 +0900
-+++ b/libgcc/crtstuff.c	2024-03-14 06:03:42.398079615 +0900
-@@ -441,17 +441,9 @@
+--- a/libgcc/crtstuff.c
++++ b/libgcc/crtstuff.c
+@@ -442,17 +442,9 @@
  #ifdef FINI_SECTION_ASM_OP
  CRT_CALL_STATIC_FUNCTION (FINI_SECTION_ASM_OP, __do_global_dtors_aux)
  #elif defined (FINI_ARRAY_SECTION_ASM_OP)
@@ -18,7 +18,7 @@
  #else /* !FINI_SECTION_ASM_OP && !FINI_ARRAY_SECTION_ASM_OP */
  static void __attribute__((used))
  __do_global_dtors_aux_1 (void)
-@@ -494,17 +486,9 @@
+@@ -495,17 +487,9 @@
  #ifdef __LIBGCC_INIT_SECTION_ASM_OP__
  CRT_CALL_STATIC_FUNCTION (__LIBGCC_INIT_SECTION_ASM_OP__, frame_dummy)
  #else /* defined(__LIBGCC_INIT_SECTION_ASM_OP__) */

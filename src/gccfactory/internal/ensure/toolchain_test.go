@@ -37,7 +37,7 @@ func newFakeToolchain(t *testing.T, host, target triple.Triple) *fakeToolchain {
 	for _, n := range ToolDirTools {
 		synthELF(t, filepath.Join(ToolDir(f.prefix, target), n), host, "")
 	}
-	plugin := filepath.Join(f.prefix, "libexec", "gcc", target.Raw, "14.2.0")
+	plugin := filepath.Join(f.prefix, "libexec", "gcc", target.Raw, "16.2.0")
 	if err := os.MkdirAll(plugin, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +591,7 @@ func TestLTOPluginParity(t *testing.T) {
 	host := triple.MustParse("x86_64-linux-musl")
 	target := triple.MustParse("aarch64-linux-musl")
 	f := newFakeToolchain(t, host, target)
-	plugin := filepath.Join(f.prefix, "libexec", "gcc", target.Raw, "14.2.0")
+	plugin := filepath.Join(f.prefix, "libexec", "gcc", target.Raw, "16.2.0")
 
 	// The plugin is linked into ld, so a .a-only install is the normal shape
 	// and must not read as a deficiency.

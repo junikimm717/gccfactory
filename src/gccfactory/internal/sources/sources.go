@@ -22,8 +22,8 @@ var raw []byte
 
 type Source struct {
 	Name    string   `json:"name"`    // short key, e.g. "gcc"
-	Version string   `json:"version"` // e.g. "14.2.0"
-	File    string   `json:"file"`    // local filename, e.g. "gcc-14.2.0.tar.xz"
+	Version string   `json:"version"` // e.g. "16.2.0"
+	File    string   `json:"file"`    // local filename, e.g. "gcc-16.2.0.tar.xz"
 	URLs    []string `json:"urls"`    // mirrors, tried in order
 	SHA256  string   `json:"sha256"`  // lowercase hex, 64 chars
 	TopDir  string   `json:"topdir"`  // single top-level dir inside the archive; "" for raw files

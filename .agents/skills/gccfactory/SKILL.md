@@ -279,6 +279,44 @@ the recipe, so adding one does not invalidate the 22-cell matrix.
 canadian slug, so it is safe to run while a build is in flight: a cell being
 republished right now is skipped rather than read mid-rename.
 
+## Bumping a pinned upstream version
+
+Worked from the gcc 14.2.0 -> 16.2.0 bump; the shape is the same for any pin.
+
+**Never type a checksum.** Hand-edit only `version`, `file`, `urls` and
+`topdir` in `internal/sources/sources.json`, then run
+`./update-sources.sh --only <name>`: the updater writes bytes it just pulled
+over the network and nothing else. GNU publishes a `.sig` but no checksum file
+for gcc, so confirm the result against a mirror on a *different* CDN
+(`ftp.gnu.org` and `mirrors.kernel.org` do not share a backend) before
+committing it.
+
+**Regenerate the patch set; do not copy it.** Patches are keyed by
+`patches/<name>-<version>/`, so a bump needs a whole new directory, and
+`srctree` applies them with plain `patch -p1` — which tolerates offsets *and
+fuzz*. A fuzzy hunk that lands somewhere plausible but wrong is silent, and you
+find out four hours later in a miscompiled libgcc. So:
+
+1. `patch -p1 --dry-run` each old patch against the new tree. The
+   `checking file X` lines are the file list, resolved exactly the way the real
+   apply would resolve it.
+2. Snapshot those files, apply for real, and diff them back out. Doing this in
+   sequence against one accumulating tree keeps later patches' context correct.
+3. Prove the new set: apply it to a *fresh* extract with `patch -F0` (zero
+   fuzz), and check the result is byte-identical to the tree you generated it
+   from.
+
+**Drop what upstream absorbed, keep the numbering.** A hunk that now fails is
+usually a backport the new release already carries — read the file before
+concluding anything else. Most of the set comes from musl-cross-make and is
+named after mcm's files, so keep the original numbers and leave gaps where you
+dropped one; renumbering destroys the correspondence to upstream for no gain.
+
+**Then check what the new sources need from their neighbours.** gcc's
+`lto-plugin.c` is vendored into binutils' libbfd by `vendorLTOPlugin`, so a gcc
+bump silently changes code compiled inside binutils. Compile it by hand against
+`binutils/include` before starting a four-hour build.
+
 ## The debug loop
 
 Recompiles are expensive. Never rerun a full build to test a hypothesis.

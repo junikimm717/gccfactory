@@ -1,6 +1,6 @@
 --- a/gcc/configure.ac
 +++ b/gcc/configure.ac
-@@ -4321,9 +4321,18 @@
+@@ -4447,9 +4447,18 @@
    AC_MSG_RESULT($gcc_cv_ld_demangle)
  fi
  
@@ -22,7 +22,7 @@
    save_ld_vers_minor="$ld_vers_minor"
 --- a/gcc/configure
 +++ b/gcc/configure
-@@ -28001,7 +28001,17 @@
+@@ -28601,7 +28601,17 @@
  { $as_echo "$as_me:${as_lineno-$LINENO}: checking linker plugin support" >&5
  $as_echo_n "checking linker plugin support... " >&6; }
  gcc_cv_lto_plugin=0
@@ -43,7 +43,7 @@
    save_ld_vers_minor="$ld_vers_minor"
 --- a/gcc/gcc.cc
 +++ b/gcc/gcc.cc
-@@ -9231,9 +9231,7 @@
+@@ -9302,9 +9302,7 @@
  					     LTOPLUGINSONAME, R_OK,
  					     false);
  	      if (!temp_spec)

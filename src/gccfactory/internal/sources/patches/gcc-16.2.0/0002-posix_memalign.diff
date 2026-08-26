@@ -1,5 +1,3 @@
-diff --git a/gcc/config/i386/pmm_malloc.h b/gcc/config/i386/pmm_malloc.h
-index 1b0bfe37852..d7b2b19bb3c 100644
 --- a/gcc/config/i386/pmm_malloc.h
 +++ b/gcc/config/i386/pmm_malloc.h
 @@ -27,12 +27,13 @@
@@ -19,7 +17,7 @@ index 1b0bfe37852..d7b2b19bb3c 100644
  
  static __inline void *
  _mm_malloc (size_t __size, size_t __alignment)
-@@ -42,7 +43,7 @@ _mm_malloc (size_t __size, size_t __alignment)
+@@ -42,7 +43,7 @@
      return malloc (__size);
    if (__alignment == 2 || (sizeof (void *) == 8 && __alignment == 4))
      __alignment = sizeof (void *);

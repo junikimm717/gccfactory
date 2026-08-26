@@ -442,6 +442,10 @@ foreign binary; do not conclude from the missing mount that it's unavailable.
 Every `cross_<T>` job dies in `gcc-all-gcc` compiling `libcody/buffer.cc` and
 `cody.hh`, with dozens of near-identical errors naming `char8_t`.
 
+This is the gcc-14.2 form of the trap. We ship gcc 16.2 now, whose libcody
+takes `char8_t`, so you will not hit this exact error — but the shape recurs
+every time the host compiler's default standard moves, so it is kept here.
+
 **Cause.** The *build machine's* g++ is GCC 15 or newer, whose default C++
 standard is C++20 or later. In C++20 `u8"..."` has type `const char8_t[]`, and
 gcc 14.2's libcody only declares `S2C(const char *)`. This has nothing to do
@@ -454,22 +458,116 @@ arch-specific cause.
 target libraries too (see the static-linking trap above; `CXX` does not
 propagate). `commonConfig` in `internal/recipe/config.go` passes
 `CXX=g++ -std=gnu++17` for cross jobs, and `CXX_FOR_BUILD=` likewise for
-canadian ones — a canadian job's `CXX` is our own gcc 14.2, which already
-defaults to gnu++17, but its build-side generator programs still use the build
-machine's compiler.
+canadian ones — a canadian job's `CXX` is our own gcc, which already defaults
+to gnu++17, but its build-side generator programs still use the build machine's
+compiler. gcc needs only an ISO C++14 build compiler, so the pin is free
+insurance rather than a version-specific workaround.
 
 **Diagnose in 5 seconds, not in a 10-minute rebuild.** The srctree is already
 published, so compile the one file by hand:
 
 ```sh
-cd dist/srctrees/gcc-14.2.0/tree/libcody
+cd dist/srctrees/gcc-*/tree/libcody
 g++ -c buffer.cc -I. -o /tmp/x.o                  # reproduces the failure
 g++ -std=gnu++17 -c buffer.cc -I. -o /tmp/x.o     # proves the fix
 ```
 
-**Generalise:** gcc 14.2 was written against a gnu++17-default world. When the
-host compiler is far newer than the gcc being built, suspect a default-standard
-change before suspecting the recipe.
+**Generalise:** when the host compiler is far newer than the gcc being built,
+suspect a default-standard change before suspecting the recipe.
+
+## s390x: every *dynamic* binary hangs under qemu, static ones are fine
+
+`cross_s390x` builds, passes every ELF check and every static probe, then all 24
+dynamic probes fail with `canceled: context deadline exceeded`. Looks like a
+qemu timeout under load. It is not.
+
+**Triage that actually separates the variables.** Compile a hello twice (static
+and dynamic) and cross the *executable* against the *sysroot*:
+
+| exe | sysroot | result |
+|-----|---------|--------|
+| new | new | hang |
+| new | old | ok   |
+| old | new | hang |
+| old | old | ok   |
+
+The sysroot is the variable, so the loader (`ld-musl-s390x.so.1`, i.e.
+`libc.so`) is what is broken — not codegen for the application.
+
+**Cause.** musl 1.2.5's `arch/s390x/reloc.h` writes the final handoff as
+
+```c
+#define CRTJMP(pc,sp) __asm__ __volatile__( \
+	"lgr %%r15,%1; br %0" : : "r"(pc), "r"(sp) : "memory" )
+```
+
+`"r"` permits `%r0`, and on s390x an RR-format branch with R2 = 0 is
+architecturally **no branch at all** (that encoding is the serialization
+idiom). gcc 14 happened to allocate `%r5`; gcc 16 allocates `%r0`, so `br %r0`
+does nothing and control falls into the `for(;;)` that follows `CRTJMP`:
+
+```
+78f62:	lgr	%r15,%r11
+78f66:	br	%r0          <-- no-op
+78f68:	j	78f68        <-- spins forever
+```
+
+**Fix.** The `"a"` constraint — s390's address-register class, GPRs except
+`%r0`. This is what current musl upstream already has;
+`patches/musl-1.2.5/0003-s390x-crtjmp-address-register.diff` backports it.
+s390x is the only affected arch: every other `CRTJMP` either uses a
+non-allocatable zero register or has no such rule.
+
+**Find a userspace spin without a debugger.** `-d in_asm` only logs *newly
+translated* blocks, so a tight loop never repeats there — but the last block it
+logs is where you stopped. Map it to a symbol with the load base:
+
+```sh
+qemu-s390x-static -strace -L <sysroot> ./probe        # ends after the RELRO mprotects
+qemu-s390x-static -d in_asm -D asm.log -L <sysroot> ./probe
+tail -30 asm.log                                      # last block: IN: __dls3, a7f40000 = j .
+```
+
+`base = <runtime addr of any symbol> - <nm offset of that symbol>`; subtract to
+get the file offset, then `objdump -d --start-address=`.
+
+**Generalise:** a gcc bump can change *register allocation* inside inline asm
+whose constraints were always too loose. The symptom is a hang, not a
+diagnostic, and it will look like flaky infrastructure.
+
+## GNU make: `too many arguments to function 'getenv'; expected 0, have 1`
+
+`hostmake_<H>` dies compiling make 4.4.1's bundled gnulib `lib/fnmatch.c`.
+Every cross toolchain built fine first, which makes it look like a make-specific
+regression rather than a compiler change.
+
+**Cause.** `hostmake` is the one job compiled by **our own** freshly built
+compiler (`CC=<H>-gcc`), not by the build machine's. gcc 15+ defaults to
+`-std=gnu23`, where an empty parameter list means *takes no arguments* — so
+gnulib's K&R `extern char *getenv ();` at `fnmatch.c:124` turns the call at
+line 273 into an error. Nothing about make changed; the compiler under it did.
+
+This is the general shape to expect after a gcc bump: the build machine's gcc
+compiles binutils and gcc itself, so those get exercised the moment the cross
+tier builds, but anything compiled by the *new* toolchain only breaks later.
+`hostmake` is the only such job today.
+
+**Fix.** `-std=gnu17` in `hostMakeConfig`'s `CC` (`internal/recipe/config.go`).
+`make_config` is in the job's `KeyInputs`, so this invalidates the two hostmake
+jobs and nothing else.
+
+**Diagnose without a rebuild.** A failed job keeps its work tree, so re-run the
+one compile with the real command line:
+
+```sh
+export PATH=dist/toolchains/cross/<H>/bin:$PATH
+cd dist/work/hostmake_<H>.*/obj_make/lib
+make libgnu_a-fnmatch.o CC='<H>-gcc -static --static -std=gnu17'
+```
+
+Compiling the file by hand instead will show four *extra* errors (`strchr`,
+`strlen`, `strcmp`, `NULL`) that are artifacts of missing `-DHAVE_CONFIG_H` and
+the include path — not part of the failure. Use the Makefile's own rule.
 
 ## `bin-elf` fails: `<T>-embedspu` is "not an ELF file (starts with "#! /bin/sh")"
 

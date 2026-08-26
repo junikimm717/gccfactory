@@ -1,6 +1,6 @@
---- a/libgcc/unwind-pe.h	2024-03-14 05:59:53.754073149 +0900
-+++ b/libgcc/unwind-pe.h	2024-03-14 06:00:41.226074492 +0900
-@@ -262,7 +262,7 @@
+--- a/libgcc/unwind-pe.h
++++ b/libgcc/unwind-pe.h
+@@ -264,7 +264,7 @@
  
        if (result != 0)
  	{
