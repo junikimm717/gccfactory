@@ -135,6 +135,8 @@ func binutilsConfig(c buildCfg) []string {
 		"--disable-sim",
 		"--disable-readline",
 		"--disable-libdecnumber",
+		"--enable-builtin-lto-plugin",
+		"--with-builtin-lto-plugin-version="+src(pkgGCC).Version,
 		"--build="+c.Build,
 		"--host="+c.HostTriple(),
 	)
@@ -164,6 +166,7 @@ func gccConfig(c buildCfg) []string {
 		"--disable-gnu-indirect-function",
 		"--enable-initfini-array",
 		"--enable-libstdcxx-time=rt",
+		"--enable-builtin-lto-plugin",
 		"--build="+c.Build,
 		"--host="+c.HostTriple(),
 	)

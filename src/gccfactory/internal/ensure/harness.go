@@ -133,6 +133,7 @@ func (h *harness) runAll(ctx context.Context, t triple.Triple) {
 	for _, p := range h.opts.probes {
 		if p.Name == "lto" {
 			h.ltoArchive(ctx, p)
+			h.ltoPlugin(ctx, p)
 			break
 		}
 	}
@@ -356,6 +357,104 @@ func (h *harness) ltoArchive(ctx context.Context, p Probe) {
 	}
 	h.rep.Add(Check{Name: "lto-archive", OK: true, Dur: time.Since(start),
 		Detail: joinDetail(degraded, "gcc-ar/gcc-ranlib/gcc-nm + -flto link")})
+}
+
+// ltoPlugin proves the linker plugin itself works: a bitcode-only object, an nm
+// that can read it, and a -fuse-linker-plugin link are each impossible without.
+func (h *harness) ltoPlugin(ctx context.Context, p Probe) {
+	if h.prefix == "" || h.target == nil {
+		return
+	}
+	start := time.Now()
+	dir := h.mkdir("lto-plugin")
+	fail := func(name string, err error, detail string) {
+		h.rep.Add(Check{Name: name, Err: err, Detail: detail, Dur: time.Since(start)})
+	}
+	pass := func(name, detail string) {
+		h.rep.Add(Check{Name: name, OK: true, Detail: detail, Dur: time.Since(start)})
+		start = time.Now()
+	}
+	if err := p.Write(dir); err != nil {
+		fail("lto-slim-object", err, "cannot write probe sources to "+dir)
+		return
+	}
+
+	slim := append(append([]string(nil), h.cc...),
+		"-flto", "-fno-fat-lto-objects", "-O2", "-c", "ltohelp.c", "-o", "slim.o")
+	out, err := h.exec(ctx, "lto-plugin-slim", dir, slim, h.env, h.opts.compileTimeout)
+	if err != nil {
+		fail("lto-slim-object", err, execDetail(slim, dir, out)+
+			"\n-fno-fat-lto-objects emits bitcode with no fallback machine code, so gcc refuses it"+
+			" unless it knows the linker carries the LTO plugin"+
+			" (binutils --enable-builtin-lto-plugin, and gcc configured to match)")
+		return
+	}
+	pass("lto-slim-object", "-flto -fno-fat-lto-objects compiles: the object is bitcode only")
+
+	ar := append(h.tool("gcc-ar"), "rcs", "libslim.a", "slim.o")
+	if out, err := h.exec(ctx, "lto-plugin-ar", dir, ar, h.env, h.opts.compileTimeout); err != nil {
+		fail("lto-plugin-nm-parity", err, execDetail(ar, dir, out)+
+			"\ngcc-ar must pass --plugin to ar to index a bitcode-only object")
+		return
+	}
+
+	// Plain nm may exit non-zero on an object it cannot parse; only what it
+	// prints is evidence, so its status is deliberately not consulted.
+	plainArgv := append(h.tool("nm"), "libslim.a")
+	plainOut, _ := h.exec(ctx, "lto-plugin-nm-plain", dir, plainArgv, h.env, h.opts.compileTimeout)
+	if strings.Contains(string(plainOut), "helper_add") {
+		fail("lto-plugin-nm-parity", fmt.Errorf("plain nm lists helper_add in a slim LTO archive"),
+			execDetail(plainArgv, dir, plainOut)+
+				"\nthat symbol can only be visible to a plugin-less nm if the object still carries"+
+				" real machine code, i.e. -fno-fat-lto-objects did not take effect and nothing here"+
+				" is exercising the plugin")
+		return
+	}
+	pluginArgv := append(h.tool("gcc-nm"), "libslim.a")
+	pluginOut, err := h.exec(ctx, "lto-plugin-nm-plugin", dir, pluginArgv, h.env, h.opts.compileTimeout)
+	if err != nil {
+		fail("lto-plugin-nm-parity", err, execDetail(pluginArgv, dir, pluginOut))
+		return
+	}
+	if !strings.Contains(string(pluginOut), "helper_add") {
+		fail("lto-plugin-nm-parity", fmt.Errorf("gcc-nm cannot see helper_add either"),
+			execDetail(pluginArgv, dir, pluginOut)+
+				"\nneither nm nor gcc-nm can read the archive, so the plugin is not being used:"+
+				" nm --plugin is the only way to read symbols out of bitcode")
+		return
+	}
+	pass("lto-plugin-nm-parity", "nm sees nothing, gcc-nm sees helper_add: the plugin reads the bitcode")
+
+	link := append(append([]string(nil), h.cc...),
+		"-flto", "-fuse-linker-plugin", "-O2", "lto.c", "libslim.a", "-o", "probe")
+	out, err = h.exec(ctx, "lto-plugin-link", dir, link, h.env, h.opts.compileTimeout)
+	if err != nil {
+		fail("lto-plugin-link", err, execDetail(link, dir, out)+
+			"\nthe bitcode in libslim.a can only become code through the plugin; without it the link"+
+			" either rejects -fuse-linker-plugin outright or cannot resolve helper_add")
+		return
+	}
+	wantStatic := false
+	if err := ExpectELF(filepath.Join(dir, "probe"), *h.target, &wantStatic); err != nil {
+		fail("lto-plugin-link", err, "linked with: "+shJoin(link))
+		return
+	}
+	if h.norun {
+		h.rep.Add(Check{Name: "lto-plugin-link", OK: true, Skipped: true, Dur: time.Since(start),
+			Detail: "built ok but not run: no qemu"})
+		return
+	}
+	stdout, degraded, runOut, runArgv, err := h.runBinary(ctx, "lto-plugin-link", dir, "./probe")
+	if err != nil {
+		fail("lto-plugin-link", err, execDetail(runArgv, dir, runOut))
+		return
+	}
+	if stdout != p.Want {
+		fail("lto-plugin-link", fmt.Errorf("stdout mismatch"),
+			diffDetail(p.Want, stdout)+"\n"+execDetail(runArgv, dir, runOut))
+		return
+	}
+	pass("lto-plugin-link", joinDetail(degraded, "-fuse-linker-plugin links a bitcode-only archive and it runs"))
 }
 
 func (h *harness) mkdir(name string) string {

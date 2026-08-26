@@ -78,6 +78,10 @@ func (j *cross) Build(ctx context.Context, e *core.Env, r *core.Runner, work, st
 		return err
 	}
 
+	if err := b.vendorLTOPlugin(ctx); err != nil {
+		return err
+	}
+
 	b.step("binutils-configure")
 	if err := b.mkdirs(c.obj("binutils")); err != nil {
 		return err
