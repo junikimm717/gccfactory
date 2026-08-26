@@ -21,17 +21,19 @@ Two gccfactory processes may share one dist/ safely.`
 
 func tripleHelp() string {
 	var b strings.Builder
-	b.WriteString("Supported triples:\n")
+	// Every Known triple is now a proven target, so starring them all says
+	// nothing; the remaining distinction is which two also work as hosts.
+	b.WriteString("Supported triples (all are in `--target proven`):\n")
 	for _, t := range triple.Known {
 		mark := "  "
-		for _, p := range triple.Proven {
+		for _, p := range triple.ProvenHosts {
 			if p == t {
-				mark = " *"
+				mark = " H"
 			}
 		}
 		fmt.Fprintf(&b, "  %s %s\n", mark, t)
 	}
-	b.WriteString("  (* = in `proven`)\n")
+	b.WriteString("  (H = also in `--host proven`)\n")
 	return b.String()
 }
 

@@ -44,7 +44,16 @@ Both flags accept a comma list, `+"`all`"+` (all %d supported triples) or `+"`pr
   --host proven   = %s
   --target proven = %s`,
 		cmd, cmd, cmd, len(triple.Known),
-		strings.Join(triple.ProvenHosts, ", "), strings.Join(triple.ProvenTargets, ", "))
+		strings.Join(triple.ProvenHosts, ", "), provenTargetHelp())
+}
+
+// Every target is proven, so listing all 11 would be a 250-column line that
+// says the same thing as `all`.
+func provenTargetHelp() string {
+	if len(triple.ProvenTargets) == len(triple.Known) {
+		return "every supported triple, same as `all`"
+	}
+	return strings.Join(triple.ProvenTargets, ", ")
 }
 
 func resolveMatrix(cmd, hostFlag, targetFlag string) (hosts, targets []triple.Triple, err error) {

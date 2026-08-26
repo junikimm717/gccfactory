@@ -22,9 +22,11 @@ var Known = []string{
 	"x86_64-linux-musl",
 }
 
-// "proven" means something different for the two roles: we prove two hosts but
-// four targets. Everything in Known is buildable; these are what `build
-// --host proven --target proven` and `verify` exercise end-to-end.
+// "proven" means something different for the two roles: two hosts, every
+// target. Everything in Known is buildable; these are what `build --host
+// proven --target proven` and `verify` exercise end-to-end. Listed out rather
+// than aliased to Known, so a newly wired triple is buildable but not yet
+// claimed as proven until someone verifies the full row.
 var (
 	ProvenHosts = []string{
 		"aarch64-linux-musl",
@@ -32,15 +34,22 @@ var (
 	}
 	ProvenTargets = []string{
 		"aarch64-linux-musl",
+		"arm-linux-musleabi",
+		"arm-linux-musleabihf",
+		"i386-linux-musl",
+		"mips64-linux-musl",
+		"powerpc64-linux-musl",
+		"powerpc64le-linux-musl",
 		"riscv32-linux-musl",
 		"riscv64-linux-musl",
+		"s390x-linux-musl",
 		"x86_64-linux-musl",
 	}
 )
 
-// Proven is the union, for contexts with no host/target role (the picker's
-// default selection, `help`). Prefer ProvenHosts/ProvenTargets when the role
-// is known.
+// Proven is the union, and only for ParseList's roleless case. Anything that
+// knows whether it is choosing hosts or targets must use ProvenHosts or
+// ProvenTargets: the union would offer all 11 as hosts, a 121-cell matrix.
 var Proven = union(ProvenHosts, ProvenTargets)
 
 func union(lists ...[]string) []string {

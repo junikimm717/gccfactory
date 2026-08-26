@@ -28,13 +28,12 @@ func pickMatrix(cmd string) ([]triple.Triple, []triple.Triple, error) {
 	p := &picker{cmd: cmd, items: triple.Known}
 	p.sel[0] = map[int]bool{}
 	p.sel[1] = map[int]bool{}
-	// Pre-seed with `proven`; the common case is one keypress away.
-	for _, prov := range triple.Proven {
-		for i, it := range p.items {
-			if it == prov {
-				p.sel[0][i], p.sel[1][i] = true, true
-			}
-		}
+	// Pre-seed with `proven`; the common case is one keypress away. Seeded
+	// per column: `proven` is role-dependent, and seeding hosts from the
+	// union would select all 11 as hosts and offer a 121-cell build.
+	for i, it := range p.items {
+		p.sel[0][i] = contains(triple.ProvenHosts, it)
+		p.sel[1][i] = contains(triple.ProvenTargets, it)
 	}
 
 	fmt.Print("\x1b[?25l") // hide cursor
@@ -67,8 +66,12 @@ func pickMatrix(cmd string) ([]triple.Triple, []triple.Triple, error) {
 				p.sel[p.col][i] = !all
 			}
 		case "p":
+			proven := triple.ProvenTargets
+			if p.col == 0 {
+				proven = triple.ProvenHosts
+			}
 			for i, it := range p.items {
-				p.sel[p.col][i] = contains(triple.Proven, it)
+				p.sel[p.col][i] = contains(proven, it)
 			}
 		case "enter":
 			hosts, targets := p.result()

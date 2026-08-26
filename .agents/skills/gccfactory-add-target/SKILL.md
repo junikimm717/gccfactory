@@ -5,9 +5,10 @@ description: Add a new target triple to the gccfactory build farm, or promote an
 
 # Adding / proving a target
 
-All 11 triples in `triple.Known` are wired and buildable. `triple.ProvenTargets`
-is the smaller set exercised end-to-end. Promoting one is mostly verification,
-not new code.
+All 11 triples in `triple.Known` are wired, buildable, and now *proven* —
+`triple.ProvenTargets` and `Known` currently hold the same 11. So this skill is
+about **adding a 12th**; the promotion step at the end is what you do once its
+full row builds and verifies. Promoting is mostly verification, not new code.
 
 ## 1. Describe the arch in `internal/triple/triple.go`
 
@@ -77,9 +78,17 @@ and you have not yet paid for 2 canadian builds on top of it.
 
 Add to `triple.ProvenTargets`. Note `proven` is **role-dependent** —
 `ProvenHosts` and `ProvenTargets` are separate lists because the brief requires
-2 proven hosts but 11 proven targets. `--host proven` and `--target proven`
-resolve differently by design; there is a test asserting targets stay a strict
-superset.
+2 proven hosts but every target. `--host proven` and `--target proven` resolve
+differently by design, and `triple_test.go` asserts every proven host is also a
+proven target (a canadian toolchain hosted on H needs `cross_H`).
+
+Keep the list spelled out rather than aliasing it to `Known`: a newly wired
+triple should be buildable but *not* claimed as proven until its row verifies.
+
+Two places read `proven` per column and will silently do the wrong thing if you
+seed them from the union `triple.Proven`: the picker's pre-seed and its `p`
+key (`internal/cli/pick.go`). With all targets proven, a union seed selects all
+11 as *hosts* and offers a 121-cell build.
 
 Then build and prove the full row:
 
