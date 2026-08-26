@@ -24,8 +24,9 @@ var cmdClean = &command{
               partial progress of any interrupted build.
   --logs      remove dist/logs/. Artifacts are untouched.
   --all       remove work, staging, trash, logs, state AND every built
-              toolchain. Downloaded tarballs in dist/src/ are kept, because
-              they are checksum-verified and expensive to re-fetch.
+              toolchain, including the packed tarballs in dist/tarballs/.
+              Downloaded sources in dist/src/ are kept, because they are
+              checksum-verified and expensive to re-fetch.
   --sources   also remove dist/src/ (the verified tarball cache).
   --dry-run   list what would be removed and how much it would free.
   --yes       skip the confirmation prompt for destructive modes.
@@ -87,7 +88,7 @@ func runClean(g *Global, args []string) error {
 		add(filepath.Join(g.Dist, "logs"))
 	}
 	if *all {
-		add(filepath.Join(g.Dist, "toolchains"), filepath.Join(g.Dist, "state"))
+		add(filepath.Join(g.Dist, "toolchains"), filepath.Join(g.Dist, "state"), filepath.Join(g.Dist, "tarballs"))
 	}
 	if *srcs {
 		add(filepath.Join(g.Dist, "src"))

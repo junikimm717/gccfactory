@@ -44,7 +44,7 @@ type command struct {
 var registry []*command
 
 func init() {
-	registry = []*command{cmdBuild, cmdStatus, cmdVerify, cmdLogs, cmdShell, cmdClean, cmdSources}
+	registry = []*command{cmdBuild, cmdStatus, cmdVerify, cmdPack, cmdLogs, cmdShell, cmdClean, cmdSources}
 }
 
 func commands() []*command { return registry }
