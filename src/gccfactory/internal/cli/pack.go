@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -55,8 +56,9 @@ NAMING, AND WHY IT MATTERS
 UNPREFIXED TOOL NAMES
   bin/ also gets gcc, cc, ld, ar, ... as symlinks onto their <TARGET>-prefixed
   binaries, so putting bin/ on PATH is enough to drive the toolchain. An alias
-  is skipped where bin/ already ships that name, so bin/make stays the real
-  make. Consumers that used to mint these by hand after unpacking no longer
+  is skipped where bin/ already ships that name -- that is what keeps bin/make
+  the real make, and what leaves a native toolchain's own unprefixed binaries
+  alone. Consumers that used to mint these by hand after unpacking no longer
   need to; the readback check fails a tarball whose aliases dangle.
 
 WHY THE CHECKSUMS ARE STABLE
@@ -242,22 +244,34 @@ func inspect(r *ensure.Report, dst, top string, t triple.Triple) {
 }
 
 // A dangling alias is worse than a missing one: the consumer's PATH resolves
-// and only the exec fails.
+// and only the exec fails. A native toolchain reaches the same contract by a
+// different route -- binutils installs the unprefixed names for real there --
+// so what is checked is that the name works, not how it was made.
 func inspectAliases(r *ensure.Report, a *pack.Archive, top string, t triple.Triple) {
 	var bad []string
 	names := sortedKeys(pack.AliasTools())
 	for _, name := range names {
-		want := t.Raw + "-" + pack.AliasTools()[name]
-		e, ok := a.Has(top + "/bin/" + name)
-		switch {
-		case !ok:
+		at := top + "/bin/" + name
+		e, ok := a.Has(at)
+		if !ok {
 			bad = append(bad, name+" missing")
-		case e.Type != tar.TypeSymlink || e.Link != want:
-			bad = append(bad, fmt.Sprintf("%s -> %q, want symlink to %q", name, e.Link, want))
-		default:
-			if _, ok := a.Has(top + "/bin/" + want); !ok {
-				bad = append(bad, name+" points at absent "+want)
+			continue
+		}
+		switch e.Type {
+		case tar.TypeSymlink:
+			if _, ok := a.Has(path.Join(top, "bin", e.Link)); !ok {
+				bad = append(bad, name+" -> "+e.Link+", which is not in the tarball")
 			}
+		case tar.TypeLink:
+			if _, ok := a.Has(e.Link); !ok {
+				bad = append(bad, name+" hardlinks "+e.Link+", which is not in the tarball")
+			}
+		case tar.TypeReg:
+			if !e.Executable() {
+				bad = append(bad, fmt.Sprintf("%s is mode %04o, not executable", name, e.Mode))
+			}
+		default:
+			bad = append(bad, fmt.Sprintf("%s has tar type %q", name, e.Type))
 		}
 	}
 	if len(bad) > 0 {
