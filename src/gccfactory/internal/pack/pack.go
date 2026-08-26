@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/junikimm717/gccfactory/src/gccfactory/internal/ensure"
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
@@ -55,12 +56,17 @@ type Result struct {
 
 // Writes to a temp file and renames, so an interrupted run never leaves a
 // half-written tarball that looks valid.
-func Write(dst, src, top string) (Result, error) {
+func Write(dst, src, top string, t triple.Triple) (Result, error) {
 	res := Result{Path: dst}
 	names, err := entries(src)
 	if err != nil {
 		return res, err
 	}
+	aliases := aliasLinks(src, t)
+	for rel := range aliases {
+		names = append(names, rel)
+	}
+	sort.Strings(names)
 	dir := filepath.Dir(dst)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return res, err
@@ -98,6 +104,19 @@ func Write(dst, src, top string) (Result, error) {
 
 	hard := map[[2]uint64]string{}
 	for _, rel := range names {
+		if link, ok := aliases[rel]; ok {
+			if err := tw.WriteHeader(&tar.Header{
+				Name:     path.Join(top, rel),
+				Typeflag: tar.TypeSymlink,
+				Linkname: link,
+				Mode:     0o777,
+				ModTime:  epoch,
+			}); err != nil {
+				return res, err
+			}
+			res.Symlinks++
+			continue
+		}
 		full := filepath.Join(src, rel)
 		fi, err := os.Lstat(full)
 		if err != nil {
@@ -222,6 +241,34 @@ func normalMode(fi fs.FileInfo) fs.FileMode {
 	default:
 		return 0o644
 	}
+}
+
+// AliasTools are the unprefixed names bin/ also answers to. Consumers that
+// drive the toolchain through PATH -- mimux's cross/build, musl-cross-make's
+// own README -- otherwise have to mint these by hand after unpacking.
+func AliasTools() map[string]string {
+	m := map[string]string{"cc": "gcc"}
+	for _, n := range ensure.BinutilsTools {
+		m[n] = n
+	}
+	return m
+}
+
+// An alias is dropped when bin/ already ships that name, so the tarball can
+// never shadow a real binary with a link.
+func aliasLinks(src string, t triple.Triple) map[string]string {
+	out := map[string]string{}
+	for name, tool := range AliasTools() {
+		link := t.Raw + "-" + tool
+		if _, err := os.Lstat(filepath.Join(src, "bin", name)); err == nil {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(src, "bin", link)); err != nil {
+			continue
+		}
+		out[filepath.Join("bin", name)] = link
+	}
+	return out
 }
 
 // Sorted full relative paths. A parent is a strict prefix of its children, so

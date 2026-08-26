@@ -242,6 +242,15 @@ hardlinks are preserved — dereferencing the hardlinks alone would add ~30 MB
 per toolchain. Every tarball is reopened after writing and checked for the
 single top-level dir, an executable `bin/<TARGET>-gcc`, and `bin/make`.
 
+`bin/` also carries the unprefixed names (`cc`, `gcc`, `ld`, `ar`, ... — every
+`ensure.BinutilsTools` entry plus `cc`) as symlinks onto the `<TARGET>-`
+prefixed binaries, so `PATH=<top>/bin` is enough to drive the toolchain.
+Consumers used to mint these after unpacking — mimux's `cross/build` had a
+whole `makeinstall` step for it, and its workaround for the old wrapper layout
+is now dead. An alias is skipped where `bin/` already ships that name, which is
+what keeps `bin/make` the real make. They are added at **pack** time, not in
+the recipe, so adding one does not invalidate the 22-cell matrix.
+
 `pack` takes a **non-blocking** shared lease (`core.TryReadLease`) on each
 canadian slug, so it is safe to run while a build is in flight: a cell being
 republished right now is skipped rather than read mid-rename.

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/junikimm717/gccfactory/src/gccfactory/internal/ensure"
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
@@ -77,7 +78,7 @@ func fakeTree(t *testing.T) string {
 func packFake(t *testing.T, src, dstDir, top string) (string, Result) {
 	t.Helper()
 	dst := filepath.Join(dstDir, top+".tgz")
-	res, err := Write(dst, src, top)
+	res, err := Write(dst, src, top, triple.MustParse("x86_64-linux-musl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +179,7 @@ func TestDeterministicBytes(t *testing.T) {
 		t.Fatalf("sha256 differs: %s vs %s", resA.SHA256, resB.SHA256)
 	}
 	// Repacking over an existing tarball must also be a no-op in content.
-	if _, err := Write(pathA, src, top); err != nil {
+	if _, err := Write(pathA, src, top, triple.MustParse("x86_64-linux-musl")); err != nil {
 		t.Fatal(err)
 	}
 	again, err := os.ReadFile(pathA)
@@ -195,7 +196,7 @@ func TestDeterministicBytes(t *testing.T) {
 func TestWriteLeavesNothingBehindOnFailure(t *testing.T) {
 	out := t.TempDir()
 	dst := filepath.Join(out, "nope.tgz")
-	if _, err := Write(dst, filepath.Join(t.TempDir(), "does-not-exist"), "nope"); err == nil {
+	if _, err := Write(dst, filepath.Join(t.TempDir(), "does-not-exist"), "nope", triple.MustParse("x86_64-linux-musl")); err == nil {
 		t.Fatal("packing a missing tree should fail")
 	}
 	ents, err := os.ReadDir(out)
@@ -204,5 +205,51 @@ func TestWriteLeavesNothingBehindOnFailure(t *testing.T) {
 	}
 	if len(ents) != 0 {
 		t.Fatalf("output dir should be empty, got %v", ents)
+	}
+}
+
+// The unprefixed names are the whole reason mimux's cross/build has a
+// makeinstall step; shipping them has to be safe on a real bin/ layout.
+func TestToolAliases(t *testing.T) {
+	const tri = "aarch64-linux-musl"
+	tt := triple.MustParse(tri)
+	src := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(src, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range ensure.BinutilsTools {
+		if err := os.WriteFile(filepath.Join(src, "bin", tri+"-"+tool), []byte("x"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// make is shipped unprefixed already: an alias must never shadow it.
+	if err := os.WriteFile(filepath.Join(src, "bin", "make"), []byte("real make"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const top = tri + "-cross"
+	dst := filepath.Join(t.TempDir(), top+".tgz")
+	if _, err := Write(dst, src, top, tt); err != nil {
+		t.Fatal(err)
+	}
+	a, err := Inspect(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tool := range AliasTools() {
+		e, ok := a.Has(top + "/bin/" + name)
+		if !ok {
+			t.Errorf("bin/%s missing", name)
+			continue
+		}
+		want := tri + "-" + tool
+		if e.Type != tar.TypeSymlink || e.Link != want {
+			t.Errorf("bin/%s: type %q -> %q, want a symlink to %s", name, e.Type, e.Link, want)
+		}
+		if _, ok := a.Has(top + "/bin/" + want); !ok {
+			t.Errorf("bin/%s points at %s, which is not in the tarball", name, want)
+		}
+	}
+	if e, ok := a.Has(top + "/bin/make"); !ok || e.Type != tar.TypeReg || e.Size != int64(len("real make")) {
+		t.Errorf("bin/make was replaced by an alias: %+v", e)
 	}
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"archive/tar"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -50,6 +51,13 @@ NAMING, AND WHY IT MATTERS
   the suffix is load-bearing: it is how the consumer decides whether it may run
   the compiler's own output, and the directory name is what its paths are built
   from. Get either wrong and nothing downstream resolves.
+
+UNPREFIXED TOOL NAMES
+  bin/ also gets gcc, cc, ld, ar, ... as symlinks onto their <TARGET>-prefixed
+  binaries, so putting bin/ on PATH is enough to drive the toolchain. An alias
+  is skipped where bin/ already ships that name, so bin/make stays the real
+  make. Consumers that used to mint these by hand after unpacking no longer
+  need to; the readback check fails a tarball whose aliases dangle.
 
 WHY THE CHECKSUMS ARE STABLE
   A tarball is a pure function of the tree it was made from. Entries are
@@ -182,7 +190,7 @@ func (p *packer) one(h, t triple.Triple) {
 
 	start := time.Now()
 	r := ensure.NewReport(fmt.Sprintf("pack host=%s target=%s", h.Raw, t.Raw))
-	res, err := pack.Write(dst, prefix, top)
+	res, err := pack.Write(dst, prefix, top, t)
 	if err != nil {
 		r.Fail("tarball", err, "%s", rel(p.e.Dist, dst))
 		r.Dur = time.Since(start)
@@ -230,6 +238,33 @@ func inspect(r *ensure.Report, dst, top string, t triple.Triple) {
 	} else {
 		r.Failf("bin/make", "missing; the deliverable ships make")
 	}
+	inspectAliases(r, a, top, t)
+}
+
+// A dangling alias is worse than a missing one: the consumer's PATH resolves
+// and only the exec fails.
+func inspectAliases(r *ensure.Report, a *pack.Archive, top string, t triple.Triple) {
+	var bad []string
+	names := sortedKeys(pack.AliasTools())
+	for _, name := range names {
+		want := t.Raw + "-" + pack.AliasTools()[name]
+		e, ok := a.Has(top + "/bin/" + name)
+		switch {
+		case !ok:
+			bad = append(bad, name+" missing")
+		case e.Type != tar.TypeSymlink || e.Link != want:
+			bad = append(bad, fmt.Sprintf("%s -> %q, want symlink to %q", name, e.Link, want))
+		default:
+			if _, ok := a.Has(top + "/bin/" + want); !ok {
+				bad = append(bad, name+" points at absent "+want)
+			}
+		}
+	}
+	if len(bad) > 0 {
+		r.Failf("tool-aliases", "%s", strings.Join(bad, "; "))
+		return
+	}
+	r.Pass("tool-aliases", "%d unprefixed names in bin/ (cc, gcc, ld, ...)", len(names))
 }
 
 func failedReport(h, t triple.Triple, err error) *ensure.Report {
