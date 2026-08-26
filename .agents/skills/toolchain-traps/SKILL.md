@@ -205,17 +205,31 @@ you don't control, invoke the loader directly:
 `dlopen` a plugin at all, so static host tools and a shared LTO plugin are
 fundamentally at odds.
 
-**Status — measured, not assumed.** On real canadian toolchains in both
-directions: all four `lto` probe cells pass, and so do `lto-archive`
-(`-flto -c` → `gcc-ar rcs` → `gcc-ranlib` → link) and `gcc-nm-lto` (gcc-nm does
-read symbols out of an LTO archive). LTO drives through `lto-wrapper`, which
-does not need the `.so`. `ensure` reports the parity gap as a non-fatal skip
-via `lto-plugin`, and `gcc-nm-lto` is a *separate* check so "plugin not
-loading" stays distinguishable from "LTO broken".
+**Fix — the plugin is linked in, not loaded.** binutils is built with
+`--enable-builtin-lto-plugin` over a vendored copy of gcc's `lto-plugin.c`
+(`recipe.vendorLTOPlugin`), and gcc is configured to match, so `ld`/`ar` carry
+the plugin and never dlopen anything. Without that, `-fuse-linker-plugin` is
+rejected outright ("not supported in this configuration") and
+`-fno-fat-lto-objects` with it; plain `-flto` still worked, because it drives
+through `lto-wrapper`, which is why the gap was invisible until something asked
+for slim objects.
 
-The known-broken case is a third-party build system that hardcodes
-`ar --plugin .../liblto_plugin.so`. If you ever need the `.so`, the host tools
-cannot be fully static — that is the actual trade, so decide it deliberately.
+`ensure` proves the plugin end to end with `lto-slim-object`,
+`lto-plugin-nm-parity` (plain `nm` blind to the archive, `gcc-nm` not) and
+`lto-plugin-link`. `lto-plugin` only records which `liblto_plugin.*` file
+shipped; an absent `.so` is expected now and never fails.
+
+**Half the patch is worse than none.** The two patches must land together. With
+gcc patched and binutils not, `HAVE_LTO_PLUGIN=2` makes the driver emit
+`-plugin` on *every* link, so a static-host `ld` fails even on `hello.c`:
+
+    ld: liblto_plugin.so: error loading plugin: Dynamic loading not supported
+
+That message on a trivial compile means a version skew, not a missing feature.
+A BUILD-hosted `cross_<T>` hides it — its `ld` is dynamic and really does
+dlopen the `.so` — so the failure surfaces only at the first canadian cell.
+Check `ENABLE_BUILTIN_LTO_PLUGIN` in `dist/srctrees/binutils-2.44/tree/{bfd,ld}/plugin.c`
+before trusting a run.
 
 ## `fatal error: iostream: No such file or directory` — but only when H == T
 

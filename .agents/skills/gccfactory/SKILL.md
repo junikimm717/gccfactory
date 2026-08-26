@@ -14,6 +14,10 @@ and is kept authoritative — read it before writing new docs.
 ```
 src/gccf                 bash shim; the ONLY entry point. Linux-only by
                          design — it never launches a container itself.
+                         Rebuilds the binary from an mtime check that must
+                         list every go:embed input (patches, probes), not
+                         just *.go — a patch that does not trigger a rebuild
+                         silently does not take effect.
 docker/Dockerfile        debian bookworm + qemu-user-static + go. Multi-arch:
                          picks the go tarball from dpkg --print-architecture
                          against a per-arch pinned sha256. A new arch needs a
@@ -157,6 +161,19 @@ Two lessons worth keeping:
   Budgeting ~2.5 GB/job when the real figure was ~1.2 GB at `-j3` left half the
   machine unused. Once CPU sits near 0% idle, stop — more workers past that
   only add context switching, and RAM headroom is not a reason to add them.
+- **The canadian peak is `genautomata`, not libstdc++.** gcc's scheduler
+  generator runs during `gcc-all-host` and takes ~2 GB *per job*; three
+  concurrent canadian cells put a 30 GB box into swap. Canadian cells are not
+  the cheap half of the matrix at that moment, whatever the host-code-only
+  reasoning suggests.
+- **Sweeps stop helping once the frontier narrows.** Workers block on a lease
+  rather than moving to another job, so several processes chasing the same few
+  `cross_*` tails all stall while canadian cells with satisfied deps sit
+  unclaimed. Aim a process at the frontier that just opened
+  (`--host H --target <the targets whose cross_ is ok>`) instead of adding
+  another `--target all`.
+- **Watch swap *rate* (`vmstat` si/so), not swap used.** Pages stay swapped
+  after the pressure ends, so the total reads as a permanent alarm.
 
 ## How verification works
 
@@ -202,13 +219,20 @@ static, plus `dlopen` and `static-pie` which are one mode each).
   the toolchain is not self-contained.
 - `ExpectELF` — a dynamically linked result's `PT_INTERP` must be musl's
   loader, which is what catches a glibc-linked binary.
-- `LTOPluginReport` — records whether `liblto_plugin.so` shipped; never fails
-  on its own, because only the LTO probes can prove LTO works.
+- `lto-slim-object` / `lto-plugin-nm-parity` / `lto-plugin-link` — prove the
+  LTO linker plugin really works: `-fno-fat-lto-objects` compiles, plain `nm`
+  sees nothing in the resulting archive while `<T>-gcc-nm` sees `helper_add`,
+  and `-fuse-linker-plugin` links that bitcode-only archive into a TARGET ELF
+  that runs. Static musl host tools cannot `dlopen`, so binutils is built with
+  `--enable-builtin-lto-plugin` and the plugin is linked into `ld`/`ar`.
+- `LTOPluginReport` — records how `liblto_plugin.*` shipped; never fails, and
+  an absent `.so` is normal now that the plugin is built in.
 
 Results are a `Report` of named `Check`s (pass / fail / **skip**, printed
 distinctly so a skip is never mistaken for a pass). Check totals scale with the
 matrix; what matters is **0 failures**, and that every skip is one you can name
-(the lto-plugin skip on a fully-static host toolchain is the expected one).
+(a `lto-plugin` skip just means no `liblto_plugin.*` file shipped at all; the
+functional `lto-plugin-*` checks are the verdict).
 
 Run it with `./src/gccf verify` — with no flags it verifies everything
 currently built in `dist/`, so it is always a safe thing to type.

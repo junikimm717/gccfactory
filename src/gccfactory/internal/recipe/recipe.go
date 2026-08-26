@@ -33,7 +33,7 @@ import (
 // changes in a way the configure flags do not capture — a new step, a different
 // ordering, a changed install layout. Every job key includes it, so bumping it
 // rebuilds the world.
-const Version = 1
+const Version = 2
 
 // sysrootLayout describes the shape of a published sysroot. It is keyed
 // separately from Version so that changing it rebuilds the toolchains without
@@ -165,6 +165,19 @@ cd ..
 mv src_gcc.tmp src_gcc
 `
 	return b.sh(ctx, "prepare-srcgcc", b.cfg.Work, nil, script)
+}
+
+// Static musl has no dlopen, so the plugin is linked into libbfd rather than
+// loaded at run time; see toolchain-traps.
+func (b *builder) vendorLTOPlugin(ctx context.Context) error {
+	c := b.cfg
+	script := fmt.Sprintf(`
+cp %[1]s/lto-plugin/lto-plugin.c %[2]s/bfd/lto-plugin-builtin.c
+cp %[1]s/gcc/lto/common.h %[2]s/bfd/lto-common.h
+sed -i 's|#include "../gcc/lto/common.h"|#include "lto-common.h"|' %[2]s/bfd/lto-plugin-builtin.c
+grep -q '#include "lto-common.h"' %[2]s/bfd/lto-plugin-builtin.c
+`, c.src("gcc"), c.src("binutils"))
+	return b.sh(ctx, "vendor-lto-plugin", c.Work, nil, script)
 }
 
 // scratchSysrootLinks adds the three conventions gcc's target configs expect of

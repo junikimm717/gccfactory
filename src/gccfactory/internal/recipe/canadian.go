@@ -161,6 +161,10 @@ func (j *canadian) Build(ctx context.Context, e *core.Env, r *core.Runner, work,
 	}
 
 	c := b.cfg
+	if err := b.vendorLTOPlugin(ctx); err != nil {
+		return err
+	}
+
 	b.step("binutils-configure")
 	if err := b.mkdirs(c.obj("binutils")); err != nil {
 		return err

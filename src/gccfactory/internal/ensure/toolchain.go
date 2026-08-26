@@ -423,10 +423,9 @@ func LoaderPath(sysroot string, t triple.Triple) string {
 	return real
 }
 
-// LTOPluginReport records whether the toolchain ships the LTO linker plugin as
-// a shared object (as musl-cross-make does) or only as a static archive, which
-// is what fully-static host tools produce. It never fails: only the LTO probes
-// themselves can prove whether LTO actually works.
+// LTOPluginReport records how the LTO linker plugin is shipped. An absent .so
+// is expected: --enable-builtin-lto-plugin links it into ld and ar instead. It
+// never fails, and it is not the verdict -- lto-plugin-link is.
 func LTOPluginReport(prefix string, t triple.Triple) *Report {
 	rep := NewReport("lto plugin " + prefix)
 	glob := filepath.Join(prefix, "libexec", "gcc", t.Raw, "*", "liblto_plugin.*")
@@ -442,13 +441,13 @@ func LTOPluginReport(prefix string, t triple.Triple) *Report {
 	}
 	switch {
 	case len(so) > 0:
-		rep.Pass("lto-plugin", "liblto_plugin.so present (%s)", so[0])
+		rep.Pass("lto-plugin", "liblto_plugin.so present (%s): a dynamic linker could also dlopen it", so[0])
 	case len(a) > 0:
-		rep.Skip("lto-plugin", "only liblto_plugin.a (%s): static host tools cannot dlopen a plugin,"+
-			" so ld/ar plugin auto-loading is unavailable -- musl-cross-make ships a .so."+
-			" gcc still drives LTO through lto-wrapper; the lto probes below are the real verdict", a[0])
+		rep.Pass("lto-plugin", "liblto_plugin.a only (%s): the plugin is linked into ld/ar rather than"+
+			" dlopen'd, which is what static host tools need -- lto-plugin-link proves it works", a[0])
 	default:
-		rep.Skip("lto-plugin", "no liblto_plugin found under %s", filepath.Dir(glob))
+		rep.Skip("lto-plugin", "no liblto_plugin shipped under %s; nothing to dlopen, which is normal"+
+			" for a linker with the plugin built in -- lto-plugin-link is the verdict", filepath.Dir(glob))
 	}
 	return rep
 }

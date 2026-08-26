@@ -68,6 +68,8 @@ type fakeRunner struct {
 	failComp     string // probe name whose compile should fail
 	bareProg     string // tool that -print-prog-name should resolve to a bare name
 	noSymbols    bool   // gcc-nm reports nothing, as it would with no linker plugin
+	pluginFlag   string // a flag the compiler rejects, as one with no linker plugin does
+	fatObjects   bool   // plain nm sees the symbols: the objects are not bitcode-only
 	loaderBroken bool   // qemu -L <sysroot> cannot find the interpreter
 }
 
@@ -98,26 +100,28 @@ func (f *fakeRunner) Output(ctx context.Context, c Cmd) ([]byte, error) {
 		}
 		return []byte(filepath.Join(ToolDir(f.prefix, f.target), tool) + "\n"), nil
 	}
-	// the program may be preceded by a qemu launcher
-	prog := ""
-	for _, a := range c.Args {
-		if i := strings.Index(a, "-gcc-"); i >= 0 && !strings.HasPrefix(a, "-") {
-			prog = a[i:]
+	switch f.toolIn(c.Args) {
+	case "nm":
+		// A slim LTO archive shows nothing to a plugin-less nm.
+		if f.fatObjects {
+			return []byte("\nslim.o:\n0000000000000000 T helper_add\n"), nil
 		}
-	}
-	switch {
-	case prog == "-gcc-nm":
+		return []byte("\nslim.o:\nnm: slim.o: no symbols\n"), nil
+	case "gcc-nm":
 		if f.noSymbols {
 			return []byte("\na.o:\n"), nil
 		}
 		return []byte("\na.o:\n0000000000000000 T helper_add\n0000000000000020 T helper_tag\n"), nil
-	case prog == "-gcc-ar", prog == "-gcc-ranlib":
+	case "gcc-ar", "gcc-ranlib":
 		for _, a := range c.Args {
 			if strings.HasSuffix(a, ".a") {
 				return nil, os.WriteFile(filepath.Join(c.Dir, a), []byte("!<arch>\n"), 0o644)
 			}
 		}
 		return nil, nil
+	}
+	if f.pluginFlag != "" && has(c.Args, f.pluginFlag) {
+		return []byte("cc1: error: " + f.pluginFlag + " is not supported in this configuration\n"), fakeCmdErr{}
 	}
 	if filepath.Base(c.Args[0]) == "sh" { // a probe run: sh -c "exec ./probe > probe.stdout"
 		p, ok := f.probeIn(c.Dir)
@@ -152,6 +156,20 @@ func (f *fakeRunner) Output(ctx context.Context, c Cmd) ([]byte, error) {
 	}
 	synthELF(f.t, filepath.Join(c.Dir, out), f.target, interp)
 	return nil, nil
+}
+
+// toolIn names the target-prefixed toolchain program an argv invokes (e.g.
+// "gcc-nm"), looking past a qemu launcher and any flags.
+func (f *fakeRunner) toolIn(args []string) string {
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		if n, ok := strings.CutPrefix(filepath.Base(a), f.target.Raw+"-"); ok {
+			return n
+		}
+	}
+	return ""
 }
 
 func (f *fakeRunner) probeIn(dir string) (Probe, bool) {
@@ -575,11 +593,13 @@ func TestLTOPluginParity(t *testing.T) {
 	f := newFakeToolchain(t, host, target)
 	plugin := filepath.Join(f.prefix, "libexec", "gcc", target.Raw, "14.2.0")
 
+	// The plugin is linked into ld, so a .a-only install is the normal shape
+	// and must not read as a deficiency.
 	rep := LTOPluginReport(f.prefix, target)
-	if !rep.OK() || len(rep.Checks) != 1 || !rep.Checks[0].Skipped {
-		t.Fatalf("a .a-only toolchain must be reported, not failed:\n%s", rep)
+	if !rep.OK() || len(rep.Checks) != 1 || rep.Checks[0].Skipped {
+		t.Fatalf("a .a-only toolchain is the expected shape, not a gap:\n%s", rep)
 	}
-	if !strings.Contains(rep.Checks[0].Detail, "only liblto_plugin.a") {
+	if !strings.Contains(rep.Checks[0].Detail, "linked into ld/ar") {
 		t.Errorf("detail = %q", rep.Checks[0].Detail)
 	}
 
@@ -592,12 +612,17 @@ func TestLTOPluginParity(t *testing.T) {
 		t.Fatalf("a .so must read as parity:\n%s", rep)
 	}
 
-	// Never fatal, even with nothing at all.
+	// Never fatal, even with nothing at all -- and it must point at the check
+	// that actually decides.
 	if err := os.RemoveAll(filepath.Join(f.prefix, "libexec")); err != nil {
 		t.Fatal(err)
 	}
-	if r := LTOPluginReport(f.prefix, target); !r.OK() {
+	r := LTOPluginReport(f.prefix, target)
+	if !r.OK() {
 		t.Fatalf("the plugin check must never fail a toolchain:\n%s", r)
+	}
+	if !strings.Contains(r.Checks[0].Detail, "lto-plugin-link") {
+		t.Errorf("an absent plugin must defer to the functional check, got %q", r.Checks[0].Detail)
 	}
 }
 
@@ -622,6 +647,10 @@ func TestLTOArchiveDetectsPluginlessNm(t *testing.T) {
 	if failed(rep, "lto-archive") {
 		t.Errorf("lto-archive should be judged on its own:\n%s", rep)
 	}
+	// The same blindness fails the sharper parity check.
+	if !failed(rep, "lto-plugin-nm-parity") {
+		t.Errorf("a gcc-nm that sees nothing must fail the parity check:\n%s", rep)
+	}
 	var ltoCells int
 	for _, c := range rep.Checks {
 		if strings.HasPrefix(c.Name, "probe:lto/") {
@@ -634,4 +663,82 @@ func TestLTOArchiveDetectsPluginlessNm(t *testing.T) {
 	if ltoCells != 2 { // -O2 dynamic + static
 		t.Errorf("expected 2 lto probe cells, got %d", ltoCells)
 	}
+}
+
+// A toolchain that quietly loses plugin LTO must not verify: each step of
+// lto-plugin is one only a working plugin can take.
+func TestLTOPluginChecksCatchABrokenPlugin(t *testing.T) {
+	host := triple.MustParse("x86_64-linux-musl")
+	target := triple.MustParse("aarch64-linux-musl")
+	lto, err := ProbesNamed([]string{"lto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := func(t *testing.T, tweak func(*fakeRunner)) *Report {
+		t.Helper()
+		f := newFakeToolchain(t, host, target)
+		r := newFakeRunner(t, f)
+		tweak(r)
+		return CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
+			"qemu-x86_64", "qemu-aarch64", WithOptLevels("-O2"), WithProbes(lto...))
+	}
+	ran := func(rep *Report, name string) bool {
+		for _, c := range rep.Checks {
+			if c.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	// gcc without a working plugin rejects -fno-fat-lto-objects outright.
+	t.Run("no slim objects", func(t *testing.T) {
+		rep := run(t, func(r *fakeRunner) { r.pluginFlag = "-fno-fat-lto-objects" })
+		if !failed(rep, "lto-slim-object") {
+			t.Fatalf("a rejected -fno-fat-lto-objects must fail:\n%s", rep)
+		}
+		if ran(rep, "lto-plugin-link") {
+			t.Errorf("nothing downstream should be claimed once slim objects fail:\n%s", rep)
+		}
+		if !strings.Contains(rep.Err().Error(), "builtin-lto-plugin") {
+			t.Errorf("the failure should name the remedy:\n%s", rep.Err())
+		}
+	})
+
+	// The plugin link path is separately fatal: the old gcc error was
+	// "-fuse-linker-plugin is not supported in this configuration".
+	t.Run("no plugin link", func(t *testing.T) {
+		rep := run(t, func(r *fakeRunner) { r.pluginFlag = "-fuse-linker-plugin" })
+		if !failed(rep, "lto-plugin-link") {
+			t.Fatalf("a rejected -fuse-linker-plugin must fail:\n%s", rep)
+		}
+		if failed(rep, "lto-slim-object") || failed(rep, "lto-plugin-nm-parity") {
+			t.Errorf("only the link should fail here:\n%s", rep)
+		}
+	})
+
+	// Fat objects would let every other step "work" without a plugin, which is
+	// exactly the silent regression worth catching.
+	t.Run("objects are not slim", func(t *testing.T) {
+		rep := run(t, func(r *fakeRunner) { r.fatObjects = true })
+		if !failed(rep, "lto-plugin-nm-parity") {
+			t.Fatalf("plain nm seeing helper_add must fail:\n%s", rep)
+		}
+		if !strings.Contains(rep.Err().Error(), "did not take effect") {
+			t.Errorf("the failure should say what it means:\n%s", rep.Err())
+		}
+	})
+
+	// And the happy path exercises all three.
+	t.Run("working plugin", func(t *testing.T) {
+		rep := run(t, func(*fakeRunner) {})
+		if !rep.OK() {
+			t.Fatalf("a working plugin must pass:\n%s", rep)
+		}
+		for _, name := range []string{"lto-slim-object", "lto-plugin-nm-parity", "lto-plugin-link"} {
+			if !ran(rep, name) {
+				t.Errorf("%s did not run:\n%s", name, rep)
+			}
+		}
+	})
 }
