@@ -64,7 +64,7 @@ func TestSlugsAreStableAndUniqueAcrossTheWholeMatrix(t *testing.T) {
 		"hostmake_aarch64-linux-musl":                        true,
 		"canadian_x86_64-linux-musl__powerpc64le-linux-musl": true,
 		"canadian_aarch64-linux-musl__arm-linux-musleabihf":  true,
-		"srctree_gcc-14.2.0":                                 true,
+		"srctree_gcc-16.2.0":                                 true,
 		"srctree_binutils-2.44":                              true,
 	}
 	for s := range want {
@@ -106,7 +106,7 @@ func TestCanadianDependsOnBothCrossToolchainsAndHostMake(t *testing.T) {
 		"cross_x86_64-linux-musl",
 		"cross_aarch64-linux-musl",
 		"hostmake_x86_64-linux-musl",
-		"srctree_gcc-14.2.0",
+		"srctree_gcc-16.2.0",
 		"srctree_gmp-6.3.0",
 		"srctree_isl-0.27",
 	} {
@@ -131,7 +131,7 @@ func TestCrossDependsOnEveryInTreeGCCLibrary(t *testing.T) {
 		deps[d.Slug()] = true
 	}
 	for _, want := range []string{
-		"srctree_binutils-2.44", "srctree_gcc-14.2.0", "srctree_musl-1.2.5",
+		"srctree_binutils-2.44", "srctree_gcc-16.2.0", "srctree_musl-1.2.5",
 		"srctree_gmp-6.3.0", "srctree_mpfr-4.2.2", "srctree_mpc-1.3.1",
 		"srctree_isl-0.27", "srctree_linux-headers-4.19.88-2",
 	} {

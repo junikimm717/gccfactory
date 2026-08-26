@@ -30,7 +30,7 @@ func TestParseTriplesExpansions(t *testing.T) {
 	if err != nil || len(all) != len(triple.Known) {
 		t.Fatalf("all: got %d triples, err %v; want %d", len(all), err, len(triple.Known))
 	}
-	// "proven" is role-dependent: we prove two hosts but four targets.
+	// "proven" is role-dependent: we prove two hosts but every target.
 	provenHosts, err := parseTriples("host", "proven")
 	if err != nil || len(provenHosts) != len(triple.ProvenHosts) {
 		t.Fatalf("--host proven: got %v, err %v; want %v", names(provenHosts), err, triple.ProvenHosts)

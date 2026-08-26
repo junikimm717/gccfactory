@@ -28,7 +28,7 @@ const stallTimeout = 90 * time.Second
 func backoff(attempt int) time.Duration { return time.Duration(1<<attempt) * time.Second }
 
 var client = &http.Client{
-	// No overall timeout: gcc-14.2.0.tar.xz is ~90 MB and slow mirrors exist.
+	// No overall timeout: gcc-16.2.0.tar.xz is ~100 MB and slow mirrors exist.
 	// Progress is bounded by the dial and response-header timeouts instead.
 	Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,

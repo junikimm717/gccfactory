@@ -85,7 +85,7 @@ func TestPatchesForPatchedSources(t *testing.T) {
 		name string
 		want int
 	}{
-		{"gcc", 11}, {"binutils", 5}, {"musl", 4},
+		{"gcc", 9}, {"binutils", 5}, {"musl", 5},
 	} {
 		s := MustGet(tc.name)
 		ps, err := Patches(s)

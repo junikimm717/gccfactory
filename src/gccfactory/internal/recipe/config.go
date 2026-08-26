@@ -109,9 +109,11 @@ func commonConfig(c buildCfg) []string {
 	return f
 }
 
-// gcc 14.2's libcody predates char8_t, so a build g++ defaulting to C++20 or
-// later (gcc 15+) fails on its u8 literals. CXX, never CXXFLAGS: CXXFLAGS
-// propagates into CXXFLAGS_FOR_TARGET and would pin the target libraries too.
+// gcc needs only an ISO C++14 build compiler, so pinning the dialect costs
+// nothing and stops a host g++ whose default standard has moved on from
+// breaking the build (that is how gcc 14.2's libcody died under a C++20
+// default; see toolchain-traps). CXX, never CXXFLAGS: CXXFLAGS propagates into
+// CXXFLAGS_FOR_TARGET and would pin the target libraries too.
 func buildCXX() string { return "g++ -std=gnu++17" }
 
 // binutilsConfig is mcm's FULL_BINUTILS_CONFIG plus the explicit feature
@@ -260,7 +262,9 @@ func hostMakeConfig(c buildCfg) []string {
 		"--prefix=",
 		"--disable-dependency-tracking",
 		"--without-guile",
-		"CC=" + c.Host.Raw + "-gcc -static --static",
+		// gnu17: make 4.4.1's bundled gnulib has K&R `extern char *getenv ();`,
+		// which under our own gcc's C23 default means "takes no arguments".
+		"CC=" + c.Host.Raw + "-gcc -static --static -std=gnu17",
 	}
 }
 
