@@ -210,6 +210,14 @@ matrix; what matters is **0 failures**, and that every skip is one you can name
 Run it with `./src/gccf verify` — with no flags it verifies everything
 currently built in `dist/`, so it is always a safe thing to type.
 
+Verification is parallel across toolchains: `--workers` (defaulting to the core
+count, capped at 4) controls how many run at once. One verification is a single
+qemu-emulated compile at a time — about one core and a few hundred MB, far
+cheaper than a build worker — so on a big machine raise it toward the core
+count; a serial 22-cell pass is ~45 minutes at ~2 min/cell. Reports are printed
+in matrix order however the work finishes, so `--workers` changes only the wall
+clock, never the output.
+
 ## The debug loop
 
 Recompiles are expensive. Never rerun a full build to test a hypothesis.
