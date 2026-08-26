@@ -1,11 +1,7 @@
-// Package pack turns a published canadian toolchain tree into the distributable
-// tarball layout its consumers expect: a gzip tar holding exactly one
-// top-level directory named <TARGET>-cross or <TARGET>-native.
-//
-// Every tarball is a pure function of the tree it was made from. Entries are
-// emitted in sorted order with zeroed ownership, a fixed mtime and normalised
-// permissions, and the gzip header carries no timestamp, so packing the same
-// tree twice yields byte-identical output and a stable sha256.
+// Package pack writes the tarball layout consumers expect: a gzip tar holding
+// exactly one top-level directory named <TARGET>-cross or <TARGET>-native.
+// Output is a pure function of the tree, so a changed sha256 always means
+// changed content.
 package pack
 
 import (
@@ -28,13 +24,10 @@ import (
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
-// epoch is the mtime stamped on every entry.
 var epoch = time.Unix(0, 0).UTC()
 
-// Kind is "native" when the compiler emits code for the same architecture it
-// runs on, and "cross" otherwise. Only the architecture is compared, so
-// arm-linux-musleabi and arm-linux-musleabihf are both native on an arm host,
-// while i386 on x86_64 is a cross.
+// Only the architecture is compared: arm-linux-musleabi and
+// arm-linux-musleabihf are both native on an arm host, i386 on x86_64 is not.
 func Kind(host, target triple.Triple) string {
 	if host.Arch == target.Arch {
 		return "native"
@@ -42,9 +35,8 @@ func Kind(host, target triple.Triple) string {
 	return "cross"
 }
 
-// TopDir is the single directory the tarball contains, and the basename of the
-// tarball itself. Consumers extract into their own deps directory and then
-// look for <TopDir>/bin/<TARGET>-gcc, so the two names must agree.
+// Also the tarball's own basename: consumers extract into their deps directory
+// and then open <TopDir>/bin/<TARGET>-gcc, so the two must agree.
 func TopDir(host, target triple.Triple) string {
 	return target.Raw + "-" + Kind(host, target)
 }
@@ -61,9 +53,8 @@ type Result struct {
 	Hardlinks int
 }
 
-// Write packs src into dst under the single top-level directory top. It writes
-// to a temp file in dst's directory and renames it into place, so an
-// interrupted run never leaves a half-written tarball that looks valid.
+// Writes to a temp file and renames, so an interrupted run never leaves a
+// half-written tarball that looks valid.
 func Write(dst, src, top string) (Result, error) {
 	res := Result{Path: dst}
 	names, err := entries(src)
@@ -277,8 +268,6 @@ func (a *Archive) Has(name string) (Entry, bool) {
 	return e, ok
 }
 
-// Inspect reads a tarball back so what was written can be checked rather than
-// assumed.
 func Inspect(file string) (*Archive, error) {
 	f, err := os.Open(file)
 	if err != nil {

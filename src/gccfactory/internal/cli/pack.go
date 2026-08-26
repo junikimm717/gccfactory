@@ -204,8 +204,7 @@ func (p *packer) one(h, t triple.Triple) {
 	}
 }
 
-// inspect re-reads what was just written; a tarball nobody opened is a claim,
-// not a result.
+// A tarball nobody opened is a claim, not a result.
 func inspect(r *ensure.Report, dst, top string, t triple.Triple) {
 	a, err := pack.Inspect(dst)
 	if err != nil {
