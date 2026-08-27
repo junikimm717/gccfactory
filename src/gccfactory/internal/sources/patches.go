@@ -49,8 +49,7 @@ func hasPatchSet(s Source) bool {
 }
 
 // Patches sorts by filename, which is the order they must be applied in. A
-// source with no patch directory returns nil. Architecture subdirectories are
-// skipped; ArchPatches reads those.
+// source with no patch directory returns nil. Arch subdirectories are skipped.
 func Patches(s Source) ([]Patch, error) {
 	if !hasPatchSet(s) {
 		return nil, nil
@@ -58,7 +57,6 @@ func Patches(s Source) ([]Patch, error) {
 	return readPatchDir(path.Join("patches", s.Slug()))
 }
 
-// PatchArches lists the architecture subdirectories of a source's patch set.
 // A patch under <slug>/<arch>/ applies only to builds for that architecture,
 // so editing it rebuilds that architecture instead of the whole matrix.
 func PatchArches(s Source) []string {
@@ -79,9 +77,6 @@ func PatchArches(s Source) []string {
 	return out
 }
 
-// ArchPatches returns the patches scoped to one architecture, sorted by
-// filename. An architecture with no subdirectory returns nil, which is the
-// common case.
 func ArchPatches(s Source, arch string) ([]Patch, error) {
 	if arch == "" || !hasPatchSet(s) {
 		return nil, nil

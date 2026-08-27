@@ -38,9 +38,7 @@ func (j *cross) Slug() string { return "cross_" + j.t.Raw }
 
 func (j *cross) Deps() []core.Job {
 	deps := srcTreeJobs(append([]string{pkgBinutils}, gccSrcPkgs...)...)
-	// musl and the kernel headers are built for exactly this target, so they
-	// read the arch-scoped tree: an s390x-only musl patch rebuilds cross:s390x
-	// and the cells that depend on it, not all 11.
+	// Built for exactly this target, so they read the arch-scoped tree.
 	for _, pkg := range []string{pkgMusl, pkgLinux} {
 		deps = append(deps, srcTreeJobFor(pkg, j.t.Arch))
 	}

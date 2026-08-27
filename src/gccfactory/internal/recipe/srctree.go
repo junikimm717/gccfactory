@@ -25,17 +25,15 @@ const srcTreeSubdir = "tree"
 // and a broken patch fails one small job instead of a four-hour toolchain.
 type srcTree struct {
 	s sources.Source
-	// arch is set only when this package ships patches for it, so a tree with
-	// no architecture-specific patches stays the single shared artifact every
-	// job already depends on.
+	// Set only when this package ships patches for it, so an unpatched arch
+	// stays on the single shared artifact.
 	arch string
 }
 
 func srcTreeJob(pkg string) *srcTree { return srcTreeJobFor(pkg, "") }
 
-// srcTreeJobFor returns the tree a build for arch must read. It falls back to
-// the shared tree unless the package actually carries patches for arch, which
-// is what keeps adding the mechanism a no-op for every key that exists today.
+// Falls back to the shared tree unless the package really carries patches for
+// arch, which is what made adding this a no-op for every existing key.
 func srcTreeJobFor(pkg, arch string) *srcTree {
 	s := src(pkg)
 	if arch != "" && !hasArchPatches(s, arch) {
@@ -46,8 +44,7 @@ func srcTreeJobFor(pkg, arch string) *srcTree {
 
 func hasArchPatches(s sources.Source, arch string) bool {
 	ps, err := archPatchesFor(s, arch)
-	// An error here is a malformed patch layout. Report it through the key
-	// rather than silently widening the dependency.
+	// A malformed layout must reach the key, not silently widen the dep.
 	return err != nil || len(ps) > 0
 }
 

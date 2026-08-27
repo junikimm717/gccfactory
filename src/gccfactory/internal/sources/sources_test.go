@@ -85,8 +85,7 @@ func TestPatchesForPatchedSources(t *testing.T) {
 		name string
 		want int
 	}{
-		// musl's fifth patch is arch-scoped under musl-1.2.5/s390x/, which
-		// Patches deliberately does not return; TestArchPatches covers it.
+		// musl's fifth patch is arch-scoped, so Patches does not return it.
 		{"gcc", 9}, {"binutils", 5}, {"musl", 4},
 	} {
 		s := MustGet(tc.name)
@@ -158,8 +157,6 @@ func looksLikeUnifiedDiff(b []byte) bool {
 	return sawMinus && sawPlus && sawHunk
 }
 
-// An arch-scoped patch must be invisible to Patches and visible only through
-// ArchPatches, which is what keeps a build for another architecture off it.
 func TestArchPatches(t *testing.T) {
 	s := MustGet("musl")
 	arches := PatchArches(s)

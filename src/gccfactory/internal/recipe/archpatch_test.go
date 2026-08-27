@@ -8,9 +8,7 @@ import (
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
-// With no arch subdirectories checked in, every job must key exactly as it did
-// before arch scoping existed. This is what makes landing the mechanism free:
-// if it fails, merging the change invalidates dist/ for everyone.
+// If this fails, merging invalidates dist/ for everyone.
 func TestArchScopingIsInertWithoutArchPatches(t *testing.T) {
 	for _, pkg := range []string{pkgMusl, pkgLinux} {
 		s := src(pkg)
@@ -32,8 +30,6 @@ func TestArchScopingIsInertWithoutArchPatches(t *testing.T) {
 	}
 }
 
-// The fallback is what keeps an arch with no patches on the shared tree, so it
-// has to key off the patches actually present, not merely off arch != "".
 func TestSrcTreeJobForFallsBackWithoutPatches(t *testing.T) {
 	j := srcTreeJobFor(pkgMusl, "does-not-exist")
 	if j.arch != "" {
@@ -41,9 +37,6 @@ func TestSrcTreeJobForFallsBackWithoutPatches(t *testing.T) {
 	}
 }
 
-// An arch directory under gcc or binutils cannot be honoured: those trees are
-// read by cross (emitting for the target) and canadian (running on the host),
-// so the scope would be ambiguous. It must fail loudly rather than be ignored.
 func TestArchPatchesRejectedOnAmbiguousPackages(t *testing.T) {
 	for _, pkg := range []string{pkgGCC, pkgBinutils, pkgMake} {
 		if archScopedPkgs[pkg] {
@@ -57,8 +50,6 @@ func TestArchPatchesRejectedOnAmbiguousPackages(t *testing.T) {
 	}
 }
 
-// A malformed layout has to reach the key rather than widen the dependency
-// silently, so the hash carries the error instead of coming back empty.
 func TestArchPatchSetHashReportsLayoutErrors(t *testing.T) {
 	s := src(pkgGCC)
 	if len(sources.PatchArches(s)) == 0 {
@@ -69,7 +60,6 @@ func TestArchPatchSetHashReportsLayoutErrors(t *testing.T) {
 	}
 }
 
-// Scoping only pays off if an arch patch leaves the other architectures alone.
 func TestArchPatchesChangeOnlyTheirOwnArch(t *testing.T) {
 	s := src(pkgMusl)
 	if len(sources.PatchArches(s)) == 0 {
@@ -83,9 +73,7 @@ func TestArchPatchesChangeOnlyTheirOwnArch(t *testing.T) {
 	}
 }
 
-// The scoped tree must be a genuinely separate artifact, not the shared one
-// under a different name: two trees whose contents differ may never collide on
-// a key or a directory.
+// Two trees whose contents differ may never collide on a key or a directory.
 func TestScopedSrcTreeIsDistinct(t *testing.T) {
 	s := src(pkgMusl)
 	plain := &srcTree{s: s}
@@ -109,9 +97,7 @@ func TestScopedSrcTreeIsDistinct(t *testing.T) {
 	}
 }
 
-// The checked-in tree must not contain an arch directory under a package that
-// cannot honour one. At build time that surfaces as a poisoned key and a failed
-// srctree job; catching it here names the mistake instead.
+// At build time this is a poisoned key and a failed srctree job; here it has a name.
 func TestNoIllegalArchDirsCheckedIn(t *testing.T) {
 	for _, pkg := range []string{
 		pkgBinutils, pkgGCC, pkgMusl, pkgGMP, pkgMPFR,

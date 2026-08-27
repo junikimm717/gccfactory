@@ -133,17 +133,11 @@ func reportErr(rep *ensure.Report) error {
 	return rep.Err()
 }
 
-// archScopedPkgs may carry per-architecture patch subdirectories. The list is
-// deliberately short: musl and the kernel headers are the only sources built
-// for exactly one architecture in every job that reads them, so "which arch
-// does this patch affect" has a single answer. gcc and binutils are read by
-// cross (emitting for the target) and canadian (running on the host) alike, so
-// an arch subdirectory there would have two answers and silently pick one.
+// Only these: they are the sole sources built for exactly one architecture in
+// every job that reads them. gcc and binutils are read by cross (emitting for
+// the target) and canadian (running on the host), so the scope has two answers.
 var archScopedPkgs = map[string]bool{pkgMusl: true, pkgLinux: true}
 
-// archPatchesFor returns the patches scoped to one architecture. It rejects an
-// arch directory under a package that cannot express one, rather than ignoring
-// it: a patch that never applies is worse than a build error.
 func archPatchesFor(s sources.Source, arch string) ([]sources.Patch, error) {
 	if err := checkArchDirs(s); err != nil {
 		return nil, err
@@ -156,9 +150,8 @@ func archPatchesFor(s sources.Source, arch string) ([]sources.Patch, error) {
 	return ps, nil
 }
 
-// checkArchDirs runs for every package, not just the scopable ones: an arch
-// directory nobody reads applies to nothing, and silence would make that look
-// like a landed patch.
+// Runs for every package, not just the scopable ones: a patch directory nobody
+// reads applies to nothing, and silence looks exactly like a landed patch.
 func checkArchDirs(s sources.Source) error {
 	arches := sources.PatchArches(s)
 	if len(arches) == 0 || archScopedPkgs[s.Name] {
@@ -177,8 +170,7 @@ func archScopedPkgNames() []string {
 	return out
 }
 
-// archPatchSetHash digests the arch-scoped patches only. It is empty when the
-// architecture has no subdirectory, which keeps every key that exists today
+// Empty when the arch has no subdirectory, which is what keeps today's keys
 // byte-identical.
 func archPatchSetHash(s sources.Source, arch string) string {
 	ps, err := archPatchesFor(s, arch)

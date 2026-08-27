@@ -32,9 +32,8 @@ mkdir -p "$(dirname "$BIN")"
 
 # Rebuild only when a source file is newer than the binary. `find -newer` on the
 # whole module is cheap and avoids a multi-second go build on every invocation.
-# Directories are in the list because patches are go:embed'ed and `git mv`
-# preserves mtime: moving or deleting a .diff leaves no file newer than the
-# binary, so without -type d the next run silently uses the old patch set.
+# -type d because `git mv` preserves mtime: a moved or deleted patch leaves no
+# file newer than the binary, but always bumps its directory's.
 # go:embed inputs must be listed too: a new patch or probe changes what the
 # binary does without touching a .go file, and silently would not take effect.
 needs_build=1
