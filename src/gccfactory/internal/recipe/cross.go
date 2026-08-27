@@ -37,7 +37,14 @@ func (j *cross) Name() string { return "cross" }
 func (j *cross) Slug() string { return "cross_" + j.t.Raw }
 
 func (j *cross) Deps() []core.Job {
-	return srcTreeJobs(append([]string{pkgBinutils, pkgMusl, pkgLinux}, gccSrcPkgs...)...)
+	deps := srcTreeJobs(append([]string{pkgBinutils}, gccSrcPkgs...)...)
+	// musl and the kernel headers are built for exactly this target, so they
+	// read the arch-scoped tree: an s390x-only musl patch rebuilds cross:s390x
+	// and the cells that depend on it, not all 11.
+	for _, pkg := range []string{pkgMusl, pkgLinux} {
+		deps = append(deps, srcTreeJobFor(pkg, j.t.Arch))
+	}
+	return deps
 }
 
 func (j *cross) ArtifactDir(e *core.Env) string {
@@ -187,20 +194,21 @@ func (j *cross) Build(ctx context.Context, e *core.Env, r *core.Runner, work, st
 // built, from cross:<T>.
 func (b *builder) prepareSources(ctx context.Context, canadian bool) error {
 	b.step("prepare-sources")
-	type want struct{ pkg, as string }
+	type want struct{ pkg, as, arch string }
 	list := []want{
-		{pkgBinutils, "binutils"},
-		{pkgGCC, "gcc_base"},
-		{pkgGMP, "gmp"},
-		{pkgMPFR, "mpfr"},
-		{pkgMPC, "mpc"},
-		{pkgISL, "isl"},
+		{pkgBinutils, "binutils", ""},
+		{pkgGCC, "gcc_base", ""},
+		{pkgGMP, "gmp", ""},
+		{pkgMPFR, "mpfr", ""},
+		{pkgMPC, "mpc", ""},
+		{pkgISL, "isl", ""},
 	}
 	if !canadian {
-		list = append(list, want{pkgMusl, "musl"}, want{pkgLinux, "kernel_headers"})
+		arch := b.cfg.Target.Arch
+		list = append(list, want{pkgMusl, "musl", arch}, want{pkgLinux, "kernel_headers", arch})
 	}
 	for _, w := range list {
-		art := srcTreeJob(w.pkg).ArtifactDir(b.e)
+		art := srcTreeJobFor(w.pkg, w.arch).ArtifactDir(b.e)
 		if err := b.hardlinkSrc(ctx, w.pkg, art, w.as); err != nil {
 			return err
 		}

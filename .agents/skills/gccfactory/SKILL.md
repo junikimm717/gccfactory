@@ -317,6 +317,37 @@ dropped one; renumbering destroys the correspondence to upstream for no gain.
 bump silently changes code compiled inside binutils. Compile it by hand against
 `binutils/include` before starting a four-hour build.
 
+## Arch-scoped patches
+
+A patch under `patches/<pkg>-<ver>/` is hashed into that srctree's key, and
+every `cross:<T>` reads the same tree — so one arch-specific diff invalidates
+all 11 cross toolchains, both hostmakes and all 22 canadian cells. That is how
+a one-line `arch/s390x/reloc.h` fix cost a 36-job, 3h13m rebuild.
+
+Put an architecture-specific patch in an arch subdirectory instead:
+
+```
+patches/musl-1.2.5/0001-cve-2025-26519-p1.diff   global, rebuilds everything
+patches/musl-1.2.5/s390x/0003-crtjmp.diff        s390x only, rebuilds 4 jobs
+```
+
+The arch is the triple's first field, so `arm` covers both `musleabi` and
+`musleabihf`, and `powerpc64le` is distinct from `powerpc64` even though musl
+itself keeps one `arch/powerpc64` directory. Scoping is per-artifact, not a
+claim layered on a shared tree: `srctree_musl-1.2.5_s390x` is its own extracted
+tree, so nothing lies in a key.
+
+**Only `musl` and `linux-headers` may be scoped.** They are the sole packages
+built for exactly one architecture in every job that reads them. `gcc` and
+`binutils` are read by `cross` (emitting for the target) and `canadian`
+(running on the host), so an arch directory there has two answers and would
+silently pick one — `checkArchDirs` rejects it, and a test fails on any that
+gets checked in.
+
+An arch with no subdirectory falls back to the shared tree, so adding the
+mechanism changed no key. If you touch this, prove that again with
+`gccf build --host proven --target proven --dry-run`: it must say `0 to build`.
+
 ## The debug loop
 
 Recompiles are expensive. Never rerun a full build to test a hypothesis.
