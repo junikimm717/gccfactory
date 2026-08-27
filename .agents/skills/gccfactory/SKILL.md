@@ -373,6 +373,35 @@ Escape hatches, both for bisecting only — never leave them on:
 - `GCCF_SKIP_VERIFY=1` — publish an artifact without proving it works
 - `GCCFACTORY_KEEP_WORK=1` — retain work trees
 
+### `src-linux-headers` fails with "cannot stat" on a macOS bind mount
+
+Symptom: `prepare-sources` dies with a wall of
+
+    cp: cannot stat '<dist>/srctrees/linux-headers-*/tree/<arch>/include/linux': No such file or directory
+
+on a *varying* subset of arches, while `ls` shows every one of those symlinks
+present. The same step succeeded for other targets minutes earlier.
+
+This is **not** a recipe bug and not a race. The kernel-headers tarball wires
+each arch's `include/{linux,drm,scsi,...}` as relative symlinks into
+`generic/include/`, and `cp -al` hardlinks them. On OrbStack/Docker-Desktop
+virtiofs the inode cache goes incoherent under that hardlink churn: `lstat`
+still returns a valid symlink of the right size, but `readlink()` on it returns
+ENOENT. Confirm in one command:
+
+    stat -c '%N' <dist>/srctrees/linux-headers-*/tree/arm64/include/scsi
+
+If `stat` prints the name but reports `cannot read symbolic link`, it's this.
+
+Fix: delete the srctree and let it re-extract — fresh inodes, fresh cache.
+
+    rm -rf dist/srctrees/linux-headers-4.19.88-2
+
+The tarball in `dist/src/` is kept, so re-extraction is seconds. Nothing else
+needs rebuilding: content-addressing marks only that srctree missing. It can
+recur on a long run, so re-check this before suspecting the recipe. On a Linux
+builder with a native filesystem it does not happen at all.
+
 ## Invariants — do not break these
 
 1. **`--prefix=` is the empty string**, `--libdir=/lib`, `--with-sysroot=/<T>`,
