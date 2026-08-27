@@ -340,13 +340,39 @@ func TestOwnerPID(t *testing.T) {
 	}
 }
 
-func TestQemuPathAcceptsDirOrTemplate(t *testing.T) {
-	x86 := triple.MustParse("powerpc64le-linux-musl")
-	if got := qemuPath("/usr/bin", x86); got != "/usr/bin/qemu-ppc64le-static" {
-		t.Errorf("dir form: %q", got)
-	}
-	if got := qemuPath("/opt/q/qemu-%s", x86); got != "/opt/q/qemu-ppc64le" {
+// powerpc64le's qemu is named ppc64le, not powerpc64le, so the substitution
+// has to go through QemuName rather than the triple's arch.
+func TestQemuPathTemplateUsesQemuName(t *testing.T) {
+	ppc := triple.MustParse("powerpc64le-linux-musl")
+	if got := qemuPath("/opt/q/qemu-%s", ppc); got != "/opt/q/qemu-ppc64le" {
 		t.Errorf("template form: %q", got)
+	}
+}
+
+// The directory form prefers a binary that is really there. An earlier version
+// of this test pinned the -static guess against /usr/bin, so it failed on any
+// machine with qemu installed -- it was asserting the fallback while the code
+// correctly returned a working path.
+func TestQemuPathDirFormFindsInstalledBinary(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "qemu-ppc64le")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := qemuPath(dir, triple.MustParse("powerpc64le-linux-musl"))
+	if got != bin {
+		t.Errorf("dir form: got %q, want the binary that exists at %q", got, bin)
+	}
+}
+
+// With nothing on disk and nothing on PATH, the guess is what ensure turns into
+// a precise "tried ..." error, so it must still name the -static form.
+func TestQemuPathFallsBackToStaticGuess(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", t.TempDir())
+	got := qemuPath(dir, triple.MustParse("powerpc64le-linux-musl"))
+	if want := filepath.Join(dir, "qemu-ppc64le-static"); got != want {
+		t.Errorf("fallback: got %q, want %q", got, want)
 	}
 }
 
