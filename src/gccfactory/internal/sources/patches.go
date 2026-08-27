@@ -38,21 +38,57 @@ func PatchSets() []string {
 	return out
 }
 
-// Patches sorts by filename, which is the order they must be applied in. A
-// source with no patch directory returns nil.
-func Patches(s Source) ([]Patch, error) {
+func hasPatchSet(s Source) bool {
 	slug := s.Slug()
-	found := false
 	for _, d := range PatchSets() {
 		if d == slug {
-			found = true
-			break
+			return true
 		}
 	}
-	if !found {
+	return false
+}
+
+// Patches sorts by filename, which is the order they must be applied in. A
+// source with no patch directory returns nil. Arch subdirectories are skipped.
+func Patches(s Source) ([]Patch, error) {
+	if !hasPatchSet(s) {
 		return nil, nil
 	}
-	dir := path.Join("patches", slug)
+	return readPatchDir(path.Join("patches", s.Slug()))
+}
+
+// A patch under <slug>/<arch>/ applies only to builds for that architecture,
+// so editing it rebuilds that architecture instead of the whole matrix.
+func PatchArches(s Source) []string {
+	if !hasPatchSet(s) {
+		return nil
+	}
+	ents, err := patchFS.ReadDir(path.Join("patches", s.Slug()))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range ents {
+		if e.IsDir() {
+			out = append(out, e.Name())
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func ArchPatches(s Source, arch string) ([]Patch, error) {
+	if arch == "" || !hasPatchSet(s) {
+		return nil, nil
+	}
+	dir := path.Join("patches", s.Slug(), arch)
+	if _, err := patchFS.ReadDir(dir); err != nil {
+		return nil, nil
+	}
+	return readPatchDir(dir)
+}
+
+func readPatchDir(dir string) ([]Patch, error) {
 	ents, err := patchFS.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("sources: reading embedded patch dir %s: %w", dir, err)

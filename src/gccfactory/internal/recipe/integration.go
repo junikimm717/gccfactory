@@ -59,6 +59,9 @@ func extract(ctx context.Context, s sources.Source, tarball, dst string) error {
 // patchesFor returns the embedded patch set for a source, sorted by filename
 // (the order they must be applied in).
 func patchesFor(s sources.Source) ([]sources.Patch, error) {
+	if err := checkArchDirs(s); err != nil {
+		return nil, err
+	}
 	ps, err := sources.Patches(s)
 	if err != nil {
 		return nil, fmt.Errorf("recipe: patches for %s: %w", s.Slug(), err)
@@ -78,17 +81,7 @@ func patchSetHash(s sources.Source) string {
 	if len(ps) == 0 {
 		return ""
 	}
-	h := sha256.New()
-	var n [8]byte
-	for _, p := range ps {
-		binary.BigEndian.PutUint64(n[:], uint64(len(p.Name)))
-		h.Write(n[:])
-		h.Write([]byte(p.Name))
-		binary.BigEndian.PutUint64(n[:], uint64(len(p.Data)))
-		h.Write(n[:])
-		h.Write(p.Data)
-	}
-	return hex.EncodeToString(h.Sum(nil))
+	return hashPatches(ps)
 }
 
 // internal/ensure deliberately does not import internal/core; it declares its
@@ -138,4 +131,68 @@ func reportErr(rep *ensure.Report) error {
 		return nil
 	}
 	return rep.Err()
+}
+
+// Only these: they are the sole sources built for exactly one architecture in
+// every job that reads them. gcc and binutils are read by cross (emitting for
+// the target) and canadian (running on the host), so the scope has two answers.
+var archScopedPkgs = map[string]bool{pkgMusl: true, pkgLinux: true}
+
+func archPatchesFor(s sources.Source, arch string) ([]sources.Patch, error) {
+	if err := checkArchDirs(s); err != nil {
+		return nil, err
+	}
+	ps, err := sources.ArchPatches(s, arch)
+	if err != nil {
+		return nil, fmt.Errorf("recipe: arch patches for %s/%s: %w", s.Slug(), arch, err)
+	}
+	sort.Slice(ps, func(i, j int) bool { return ps[i].Name < ps[j].Name })
+	return ps, nil
+}
+
+// Runs for every package, not just the scopable ones: a patch directory nobody
+// reads applies to nothing, and silence looks exactly like a landed patch.
+func checkArchDirs(s sources.Source) error {
+	arches := sources.PatchArches(s)
+	if len(arches) == 0 || archScopedPkgs[s.Name] {
+		return nil
+	}
+	return fmt.Errorf("recipe: %s has architecture patch dirs %v, but only %v may scope patches by architecture; move them up a level or the patches never apply",
+		s.Slug(), arches, archScopedPkgNames())
+}
+
+func archScopedPkgNames() []string {
+	out := make([]string, 0, len(archScopedPkgs))
+	for k := range archScopedPkgs {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Empty when the arch has no subdirectory, which is what keeps today's keys
+// byte-identical.
+func archPatchSetHash(s sources.Source, arch string) string {
+	ps, err := archPatchesFor(s, arch)
+	if err != nil {
+		return "ERROR:" + err.Error()
+	}
+	if len(ps) == 0 {
+		return ""
+	}
+	return hashPatches(ps)
+}
+
+func hashPatches(ps []sources.Patch) string {
+	h := sha256.New()
+	var n [8]byte
+	for _, p := range ps {
+		binary.BigEndian.PutUint64(n[:], uint64(len(p.Name)))
+		h.Write(n[:])
+		h.Write([]byte(p.Name))
+		binary.BigEndian.PutUint64(n[:], uint64(len(p.Data)))
+		h.Write(n[:])
+		h.Write(p.Data)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }

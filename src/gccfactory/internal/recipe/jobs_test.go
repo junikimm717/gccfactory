@@ -130,12 +130,20 @@ func TestCrossDependsOnEveryInTreeGCCLibrary(t *testing.T) {
 	for _, d := range Cross(triple.MustParse("s390x-linux-musl")).Deps() {
 		deps[d.Slug()] = true
 	}
+	// Prefix match: s390x's musl dep is srctree_musl-1.2.5_s390x.
 	for _, want := range []string{
 		"srctree_binutils-2.44", "srctree_gcc-16.2.0", "srctree_musl-1.2.5",
 		"srctree_gmp-6.3.0", "srctree_mpfr-4.2.2", "srctree_mpc-1.3.1",
 		"srctree_isl-0.27", "srctree_linux-headers-4.19.88-2",
 	} {
-		if !deps[want] {
+		found := false
+		for got := range deps {
+			if got == want || strings.HasPrefix(got, want+"_") {
+				found = true
+				break
+			}
+		}
+		if !found {
 			t.Errorf("cross job is missing dep %q (gmp/mpfr/mpc/isl are built in-tree, so their sources are required)", want)
 		}
 	}

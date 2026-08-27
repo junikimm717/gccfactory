@@ -25,23 +25,49 @@ const srcTreeSubdir = "tree"
 // and a broken patch fails one small job instead of a four-hour toolchain.
 type srcTree struct {
 	s sources.Source
+	// Set only when this package ships patches for it, so an unpatched arch
+	// stays on the single shared artifact.
+	arch string
 }
 
-func srcTreeJob(pkg string) *srcTree {
+func srcTreeJob(pkg string) *srcTree { return srcTreeJobFor(pkg, "") }
+
+// Falls back to the shared tree unless the package really carries patches for
+// arch, which is what made adding this a no-op for every existing key.
+func srcTreeJobFor(pkg, arch string) *srcTree {
 	s := src(pkg)
-	return intern(srcTreeSlug(s), func() *srcTree { return &srcTree{s: s} })
+	if arch != "" && !hasArchPatches(s, arch) {
+		arch = ""
+	}
+	return intern(srcTreeSlugFor(s, arch), func() *srcTree { return &srcTree{s: s, arch: arch} })
 }
 
-func srcTreeSlug(s sources.Source) string {
-	return "srctree_" + s.Name + "-" + s.Version
+func hasArchPatches(s sources.Source, arch string) bool {
+	ps, err := archPatchesFor(s, arch)
+	// A malformed layout must reach the key, not silently widen the dep.
+	return err != nil || len(ps) > 0
+}
+
+func srcTreeSlug(s sources.Source) string { return srcTreeSlugFor(s, "") }
+
+func srcTreeSlugFor(s sources.Source, arch string) string {
+	slug := "srctree_" + s.Name + "-" + s.Version
+	if arch != "" {
+		slug += "_" + arch
+	}
+	return slug
 }
 
 func (j *srcTree) Name() string     { return "srctree" }
-func (j *srcTree) Slug() string     { return srcTreeSlug(j.s) }
+func (j *srcTree) Slug() string     { return srcTreeSlugFor(j.s, j.arch) }
 func (j *srcTree) Deps() []core.Job { return nil }
 
 func (j *srcTree) ArtifactDir(e *core.Env) string {
-	return e.Path("srctrees", j.s.Name+"-"+j.s.Version)
+	dir := j.s.Name + "-" + j.s.Version
+	if j.arch != "" {
+		dir += "_" + j.arch
+	}
+	return e.Path("srctrees", dir)
 }
 
 func (j *srcTree) KeyInputs() map[string]string {
@@ -55,6 +81,10 @@ func (j *srcTree) KeyInputs() map[string]string {
 	}
 	if h := patchSetHash(j.s); h != "" {
 		in["patches"] = h
+	}
+	if j.arch != "" {
+		in["arch"] = j.arch
+		in["arch_patches"] = archPatchSetHash(j.s, j.arch)
 	}
 	return in
 }
@@ -84,6 +114,11 @@ func (j *srcTree) Build(ctx context.Context, e *core.Env, r *core.Runner, work, 
 	if err != nil {
 		return err
 	}
+	archPatches, err := archPatchesFor(j.s, j.arch)
+	if err != nil {
+		return err
+	}
+	patches = append(patches, archPatches...)
 	if len(patches) > 0 {
 		b.step("patch")
 		dir := filepath.Join(work, "patches")
