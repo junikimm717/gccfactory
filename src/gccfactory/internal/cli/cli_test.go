@@ -340,13 +340,31 @@ func TestOwnerPID(t *testing.T) {
 	}
 }
 
-func TestQemuPathAcceptsDirOrTemplate(t *testing.T) {
-	x86 := triple.MustParse("powerpc64le-linux-musl")
-	if got := qemuPath("/usr/bin", x86); got != "/usr/bin/qemu-ppc64le-static" {
-		t.Errorf("dir form: %q", got)
-	}
-	if got := qemuPath("/opt/q/qemu-%s", x86); got != "/opt/q/qemu-ppc64le" {
+func TestQemuPathTemplateUsesQemuName(t *testing.T) {
+	ppc := triple.MustParse("powerpc64le-linux-musl")
+	if got := qemuPath("/opt/q/qemu-%s", ppc); got != "/opt/q/qemu-ppc64le" {
 		t.Errorf("template form: %q", got)
+	}
+}
+
+func TestQemuPathDirFormFindsInstalledBinary(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "qemu-ppc64le")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := qemuPath(dir, triple.MustParse("powerpc64le-linux-musl"))
+	if got != bin {
+		t.Errorf("dir form: got %q, want the binary that exists at %q", got, bin)
+	}
+}
+
+func TestQemuPathFallsBackToStaticGuess(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PATH", t.TempDir()) // QemuFor searches PATH last; without this it finds the system qemu
+	got := qemuPath(dir, triple.MustParse("powerpc64le-linux-musl"))
+	if want := filepath.Join(dir, "qemu-ppc64le-static"); got != want {
+		t.Errorf("fallback: got %q, want %q", got, want)
 	}
 }
 
