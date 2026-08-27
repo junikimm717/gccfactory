@@ -85,7 +85,9 @@ func TestPatchesForPatchedSources(t *testing.T) {
 		name string
 		want int
 	}{
-		{"gcc", 9}, {"binutils", 5}, {"musl", 5},
+		// musl's fifth patch is arch-scoped under musl-1.2.5/s390x/, which
+		// Patches deliberately does not return; TestArchPatches covers it.
+		{"gcc", 9}, {"binutils", 5}, {"musl", 4},
 	} {
 		s := MustGet(tc.name)
 		ps, err := Patches(s)
@@ -154,4 +156,42 @@ func looksLikeUnifiedDiff(b []byte) bool {
 		}
 	}
 	return sawMinus && sawPlus && sawHunk
+}
+
+// An arch-scoped patch must be invisible to Patches and visible only through
+// ArchPatches, which is what keeps a build for another architecture off it.
+func TestArchPatches(t *testing.T) {
+	s := MustGet("musl")
+	arches := PatchArches(s)
+	if len(arches) == 0 {
+		t.Skip("no arch-scoped musl patches checked in")
+	}
+	for _, arch := range arches {
+		ps, err := ArchPatches(s, arch)
+		if err != nil {
+			t.Fatalf("%s/%s: %v", s.Slug(), arch, err)
+		}
+		if len(ps) == 0 {
+			t.Errorf("%s/%s: arch dir exists but yields no patches", s.Slug(), arch)
+		}
+		for _, p := range ps {
+			for _, g := range mustPatches(t, s) {
+				if g.Name == p.Name {
+					t.Errorf("%s appears in both the global set and %s/", p.Name, arch)
+				}
+			}
+		}
+	}
+	if ps, err := ArchPatches(s, "no-such-arch"); err != nil || len(ps) != 0 {
+		t.Errorf("unknown arch should yield no patches, got %d (err %v)", len(ps), err)
+	}
+}
+
+func mustPatches(t *testing.T, s Source) []Patch {
+	t.Helper()
+	ps, err := Patches(s)
+	if err != nil {
+		t.Fatalf("Patches(%s): %v", s.Slug(), err)
+	}
+	return ps
 }
