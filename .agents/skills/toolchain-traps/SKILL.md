@@ -537,14 +537,13 @@ diagnostic, and it will look like flaky infrastructure.
 
 ## riscv32: threaded programs corrupt every 64-bit `va_arg`, but only off the main thread
 
-A static CPython on `riscv32-linux-musl` deadlocks in `test_threading` while the
-other ten targets pass the same suite. Symptoms alternate between
-`RuntimeError: cannot wait on un-acquired lock` and a hard hang. Looks like a
-lock race in the interpreter. It is not — it is deterministic (200/200 trials,
-and `taskset -c 0` changes nothing), and it is musl's.
+**Symptom.** A threaded program built by the riscv32 toolchain misbehaves only on
+spawned threads, deterministically. The original case was a static CPython whose
+`test_threading` deadlocked or raised `cannot wait on un-acquired lock`, while
+the other ten targets passed the same suite.
 
-**Triage that separates the variables.** Drop the second thread entirely; run the
-suspect sequence on the main thread and then on a worker:
+**Triage that separates the variables.** Drop concurrency entirely; run the
+suspect sequence on the main thread, then on a worker:
 
 ```
 main   thread: correct, always
@@ -553,75 +552,47 @@ worker thread: garbage, always  -- for anything that reads one
 ```
 
 Main-thread-fine plus worker-thread-broken plus *deterministic* means stack
-alignment, not synchronisation. The kernel aligns the main thread's stack;
-`pthread_create` and `__clone` align everyone else's.
+alignment, not synchronisation. Stop looking at the locks and check `sp % 16` in
+the child.
 
-**Cause.** The RISC-V ILP32 psABI passes 64-bit variadic arguments in an
-even/odd **aligned register pair**, spilled to an **8-aligned** save-area slot
-that a variadic callee builds relative to its incoming `sp`. musl 1.2.5 never
-guarantees that alignment on riscv32, in two steps:
+**Cause.** musl 1.2.5 never establishes 16-byte child-stack alignment on riscv32:
+`pthread_create` rounds to `sizeof(uintptr_t)` (4 on ILP32) and then subtracts a
+20-byte `start_args`, which *inverts* the mod-8 residue; `src/thread/riscv32/clone.s`
+does nothing to repair it. The RISC-V ILP32 psABI spills 64-bit variadic
+arguments to an 8-aligned slot the callee builds from its incoming `sp`, so every
+64-bit `va_arg` on a worker thread reads garbage — or, at `-O2` under `ilp32d`,
+segfaults. Which side a binary lands on is decided by its static TLS size
+(`readelf -lW <exe> | grep TLS`), so it looks binary-specific.
 
-```c
-/* src/thread/pthread_create.c:334 */
-stack -= (uintptr_t)stack % sizeof(uintptr_t);   /* ILP32: % 4 — no 8-byte guarantee */
-stack -= sizeof(struct start_args);              /* riscv32: 20 bytes, 20 % 8 == 4 */
-```
+riscv32 is the only target in the matrix with neither protection: riscv64 shares
+the unmasked `__clone` but a 64-bit `va_arg` is one register there; arm needs the
+alignment but masks; i386 has no 8-byte varargs rule; everything else is 64-bit.
 
-The rounding is to `sizeof(uintptr_t)`, which is 4 on any ILP32 target, and the
-20-byte `start_args` then **inverts the mod-8 residue**. Which side a given
-binary lands on is decided by the incoming residue of `stack = tsd -
-libc.tls_size`, i.e. by its static TLS size — so it looks binary-specific.
-Check with `readelf -lW <exe> | grep TLS` (the CPython that failed here: `MemSiz
-0x5d`, 93 bytes).
-
-`src/thread/riscv32/clone.s` then does nothing to repair it:
-
-```
-__clone:
-	addi a1, a1, -16      <-- subtracts 16, so the mod-16 residue survives
-```
-
-Compare arm, subject to the same varargs rule and passing: `and r1,r1,#-16`.
-
-In musl 1.2.5 exactly five arches skip the mask — **loongarch64, m68k, or1k,
-riscv32, riscv64** — against fourteen that apply it. riscv is the outlier.
-
-**Why riscv32 alone.** Two independent protections, and it is the only target
-with neither: riscv64 has the same unmasked `__clone` but a 64-bit `va_arg` is
-one register there; arm needs the alignment but masks; i386 has no 8-byte
-varargs rule at all; everything else is 64-bit.
-
-**Fix.** Upstream commit `5e03c03fcde3534b37a0b995a438cd176d6882d3`, "clone:
-align the given stack pointer on or1k and riscv" (2025-02-22) — *after* 1.2.5,
-so absent from every 1.2.5 toolchain. One instruction:
-
-```diff
- __clone:
- 	# Save func and arg to stack
-+	andi a1, a1, -16
- 	addi a1, a1, -16
-```
-
-**Landed** as arch-scoped backports, so only the two riscv toolchains rebuild:
+**Fix — already landed.** Upstream commit `5e03c03f` ("clone: align the given
+stack pointer on or1k and riscv", 2025-02-22, post-1.2.5), backported arch-scoped:
 
 ```
 patches/musl-1.2.5/riscv32/0004-clone-align-child-stack.diff
 patches/musl-1.2.5/riscv64/0005-clone-align-child-stack.diff
 ```
 
-riscv64 gets the identical insertion as hygiene, not as a bug fix — an LP64
-64-bit `va_arg` is one register, so it is immune to this symptom, but the
-misalignment is still a psABI violation. Scoping matters: as a global musl patch
-this would have moved `srctree_musl-1.2.5`'s key and rebuilt all eleven cross
+One inserted `andi a1, a1, -16` before the existing `addi a1, a1, -16`. riscv64
+takes it as hygiene, not a bug fix. Arch-scoping is load-bearing: as a global musl
+patch this moves `srctree_musl-1.2.5`'s key and rebuilds all eleven cross
 toolchains for a fix that changes nothing on nine of them. Confirm the blast
-radius the same way before merging any arch patch — `./src/gccf status` before
-and after, and only the intended `cross_<T>` keys may move.
+radius the same way before merging any arch patch — `./src/gccf status` before and
+after, and only the intended `cross_<T>` keys may move.
 
-**Generalise:** a psABI alignment requirement that the C library fails to
-establish produces silent *data* corruption confined to spawned threads, and it
-will present as a deadlock or a lock-ownership error several layers up. When a
-threading bug is deterministic and disappears on the main thread, stop looking at
-the synchronisation and check `sp % 16` in the child.
+**Generalise:** a psABI alignment requirement the C library fails to establish
+produces silent *data* corruption confined to spawned threads, and it surfaces as
+a deadlock or a lock-ownership error several layers up.
+
+Full derivation — the arithmetic, the per-arch survey of `clone.s` across all 19
+musl architectures, why six earlier primitive tests all passed, and the
+before/after verification sweep — is in
+[references/musl-riscv32-clone-stack-alignment.md](references/musl-riscv32-clone-stack-alignment.md).
+Read it before touching riscv32 threading or concluding that a threading bug is a
+race.
 
 ## GNU make: `too many arguments to function 'getenv'; expected 0, have 1`
 
