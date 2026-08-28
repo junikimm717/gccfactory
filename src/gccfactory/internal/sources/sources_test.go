@@ -85,7 +85,8 @@ func TestPatchesForPatchedSources(t *testing.T) {
 		name string
 		want int
 	}{
-		// musl's fifth patch is arch-scoped, so Patches does not return it.
+		// musl also ships arch-scoped patches (s390x, riscv32, riscv64), which
+		// Patches does not return.
 		{"gcc", 9}, {"binutils", 5}, {"musl", 4},
 	} {
 		s := MustGet(tc.name)

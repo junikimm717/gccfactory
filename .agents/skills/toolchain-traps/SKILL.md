@@ -1,6 +1,6 @@
 ---
 name: toolchain-traps
-description: Symptom-to-cause catalogue for broken or subtly-wrong GCC/binutils/musl cross and canadian-cross toolchains — wrong-arch assembler, non-relocatable prefixes, missing kernel headers, target libs built by the wrong compiler, static-linking flags leaking into target code, and the specific places musl-cross-make gets canadian cross wrong. Use when a toolchain build fails, when a built toolchain produces wrong or unrunnable output, or before changing configure flags in internal/recipe.
+description: Symptom-to-cause catalogue for broken or subtly-wrong GCC/binutils/musl cross and canadian-cross toolchains — wrong-arch assembler, non-relocatable prefixes, missing kernel headers, target libs built by the wrong compiler, static-linking flags leaking into target code, arch-specific musl bugs that only surface in programs the toolchain built, and the specific places musl-cross-make gets canadian cross wrong. Use when a toolchain build fails, when a built toolchain produces wrong or unrunnable output, or before changing configure flags in internal/recipe.
 ---
 
 # Toolchain traps
@@ -534,6 +534,94 @@ get the file offset, then `objdump -d --start-address=`.
 **Generalise:** a gcc bump can change *register allocation* inside inline asm
 whose constraints were always too loose. The symptom is a hang, not a
 diagnostic, and it will look like flaky infrastructure.
+
+## riscv32: threaded programs corrupt every 64-bit `va_arg`, but only off the main thread
+
+A static CPython on `riscv32-linux-musl` deadlocks in `test_threading` while the
+other ten targets pass the same suite. Symptoms alternate between
+`RuntimeError: cannot wait on un-acquired lock` and a hard hang. Looks like a
+lock race in the interpreter. It is not — it is deterministic (200/200 trials,
+and `taskset -c 0` changes nothing), and it is musl's.
+
+**Triage that separates the variables.** Drop the second thread entirely; run the
+suspect sequence on the main thread and then on a worker:
+
+```
+main   thread: correct, always
+worker thread: correct, always  -- for anything with no 64-bit va_arg
+worker thread: garbage, always  -- for anything that reads one
+```
+
+Main-thread-fine plus worker-thread-broken plus *deterministic* means stack
+alignment, not synchronisation. The kernel aligns the main thread's stack;
+`pthread_create` and `__clone` align everyone else's.
+
+**Cause.** The RISC-V ILP32 psABI passes 64-bit variadic arguments in an
+even/odd **aligned register pair**, spilled to an **8-aligned** save-area slot
+that a variadic callee builds relative to its incoming `sp`. musl 1.2.5 never
+guarantees that alignment on riscv32, in two steps:
+
+```c
+/* src/thread/pthread_create.c:334 */
+stack -= (uintptr_t)stack % sizeof(uintptr_t);   /* ILP32: % 4 — no 8-byte guarantee */
+stack -= sizeof(struct start_args);              /* riscv32: 20 bytes, 20 % 8 == 4 */
+```
+
+The rounding is to `sizeof(uintptr_t)`, which is 4 on any ILP32 target, and the
+20-byte `start_args` then **inverts the mod-8 residue**. Which side a given
+binary lands on is decided by the incoming residue of `stack = tsd -
+libc.tls_size`, i.e. by its static TLS size — so it looks binary-specific.
+Check with `readelf -lW <exe> | grep TLS` (the CPython that failed here: `MemSiz
+0x5d`, 93 bytes).
+
+`src/thread/riscv32/clone.s` then does nothing to repair it:
+
+```
+__clone:
+	addi a1, a1, -16      <-- subtracts 16, so the mod-16 residue survives
+```
+
+Compare arm, subject to the same varargs rule and passing: `and r1,r1,#-16`.
+
+In musl 1.2.5 exactly five arches skip the mask — **loongarch64, m68k, or1k,
+riscv32, riscv64** — against fourteen that apply it. riscv is the outlier.
+
+**Why riscv32 alone.** Two independent protections, and it is the only target
+with neither: riscv64 has the same unmasked `__clone` but a 64-bit `va_arg` is
+one register there; arm needs the alignment but masks; i386 has no 8-byte
+varargs rule at all; everything else is 64-bit.
+
+**Fix.** Upstream commit `5e03c03fcde3534b37a0b995a438cd176d6882d3`, "clone:
+align the given stack pointer on or1k and riscv" (2025-02-22) — *after* 1.2.5,
+so absent from every 1.2.5 toolchain. One instruction:
+
+```diff
+ __clone:
+ 	# Save func and arg to stack
++	andi a1, a1, -16
+ 	addi a1, a1, -16
+```
+
+**Landed** as arch-scoped backports, so only the two riscv toolchains rebuild:
+
+```
+patches/musl-1.2.5/riscv32/0004-clone-align-child-stack.diff
+patches/musl-1.2.5/riscv64/0005-clone-align-child-stack.diff
+```
+
+riscv64 gets the identical insertion as hygiene, not as a bug fix — an LP64
+64-bit `va_arg` is one register, so it is immune to this symptom, but the
+misalignment is still a psABI violation. Scoping matters: as a global musl patch
+this would have moved `srctree_musl-1.2.5`'s key and rebuilt all eleven cross
+toolchains for a fix that changes nothing on nine of them. Confirm the blast
+radius the same way before merging any arch patch — `./src/gccf status` before
+and after, and only the intended `cross_<T>` keys may move.
+
+**Generalise:** a psABI alignment requirement that the C library fails to
+establish produces silent *data* corruption confined to spawned threads, and it
+will present as a deadlock or a lock-ownership error several layers up. When a
+threading bug is deterministic and disappears on the main thread, stop looking at
+the synchronisation and check `sp % 16` in the child.
 
 ## GNU make: `too many arguments to function 'getenv'; expected 0, have 1`
 

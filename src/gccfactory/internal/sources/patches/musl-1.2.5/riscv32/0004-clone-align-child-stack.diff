@@ -1,0 +1,25 @@
+Patch-Source: https://git.musl-libc.org/cgit/musl/commit/?id=5e03c03fcde3534b37a0b995a438cd176d6882d3
+Subject: clone: align the given stack pointer on riscv32
+
+Backport of the riscv32 half of upstream musl commit 5e03c03f (2025-02-22),
+released after 1.2.5. pthread_create only rounds the child stack down to
+sizeof(uintptr_t) -- 4 on ILP32 -- and then subtracts the 20-byte start_args,
+which inverts the mod-8 residue. __clone never repairs it, so every non-main
+thread runs at sp % 8 == 4 for its whole life.
+
+The RISC-V ILP32 psABI spills 64-bit variadic arguments to an 8-aligned slot in
+a save area the callee builds from its incoming sp, so a misaligned frame makes
+every 64-bit va_arg in a worker thread read garbage. Observed as CPython's
+test_threading deadlocking on Condition/RLock, whose _release_save returns the
+owner ident through Py_BuildValue("kK", ...).
+
+--- a/src/thread/riscv32/clone.s
++++ b/src/thread/riscv32/clone.s
+@@ -8,6 +8,7 @@
+ .type  __clone, %function
+ __clone:
+ 	# Save func and arg to stack
++	andi a1, a1, -16
+ 	addi a1, a1, -16
+ 	sw a0, 0(a1)
+ 	sw a3, 4(a1)

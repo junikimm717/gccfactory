@@ -1,0 +1,20 @@
+Patch-Source: https://git.musl-libc.org/cgit/musl/commit/?id=5e03c03fcde3534b37a0b995a438cd176d6882d3
+Subject: clone: align the given stack pointer on riscv64
+
+Backport of the riscv64 half of upstream musl commit 5e03c03f (2025-02-22),
+released after 1.2.5. Hygiene, not a bug fix: riscv64 inherits the same unmasked
+__clone as riscv32, but an LP64 64-bit va_arg is a single register, so the
+misalignment cannot corrupt varargs here. It is still a psABI violation that any
+code assuming a 16-aligned frame may trip over. Kept in lockstep with
+riscv32/0004 so the two never drift.
+
+--- a/src/thread/riscv64/clone.s
++++ b/src/thread/riscv64/clone.s
+@@ -8,6 +8,7 @@
+ .type  __clone, %function
+ __clone:
+ 	# Save func and arg to stack
++	andi a1, a1, -16
+ 	addi a1, a1, -16
+ 	sd a0, 0(a1)
+ 	sd a3, 8(a1)
