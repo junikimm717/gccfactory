@@ -37,6 +37,11 @@ func newFakeToolchain(t *testing.T, host, target triple.Triple) *fakeToolchain {
 	for _, n := range ToolDirTools {
 		synthELF(t, filepath.Join(ToolDir(f.prefix, target), n), host, "")
 	}
+	// The compiler backends gcc execs. A real toolchain keeps them in libexec/,
+	// but the fake resolves every -print-prog-name into the tooldir.
+	for _, n := range compilerBackends {
+		synthELF(t, filepath.Join(ToolDir(f.prefix, target), n), host, "")
+	}
 	plugin := filepath.Join(f.prefix, "libexec", "gcc", target.Raw, "16.2.0")
 	if err := os.MkdirAll(plugin, 0o755); err != nil {
 		t.Fatal(err)
@@ -828,4 +833,52 @@ func TestLTOPluginChecksCatchABrokenPlugin(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A toolchain with no C++ front end must be named as such. gcc's own error
+// quotes the base name whether or not it resolved a path, so "cannot execute
+// 'cc1plus'" on twelve probes says nothing about which file is wrong.
+func TestCanadianToolchainNamesAMissingCC1Plus(t *testing.T) {
+	host := triple.MustParse("x86_64-linux-musl")
+	target := triple.MustParse("mips64-linux-musl")
+	f := newFakeToolchain(t, host, target)
+	r := newFakeRunner(t, f)
+	r.bareProg = "cc1plus" // gcc found nothing and would fall through to $PATH
+
+	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target, "", "")
+
+	if rep.OK() {
+		t.Fatal("a toolchain with no C++ front end must not pass")
+	}
+	fails := rep.Failures()
+	if len(fails) != 1 || fails[0].Name != "gcc-finds-cc1plus" {
+		t.Fatalf("expected exactly one gcc-finds-cc1plus failure:\n%s", rep)
+	}
+	for _, c := range rep.Checks {
+		if strings.HasPrefix(c.Name, "probe:") {
+			t.Fatalf("the probe matrix must not run once a backend is missing:\n%s", rep)
+		}
+	}
+}
+
+// A backend gcc does resolve but which is not on disk fails at exec with ENOENT,
+// which reads identically to "missing" unless the path is named.
+func TestCanadianToolchainNamesAnUnexecutableBackend(t *testing.T) {
+	host := triple.MustParse("x86_64-linux-musl")
+	target := triple.MustParse("mips64-linux-musl")
+	f := newFakeToolchain(t, host, target)
+	r := newFakeRunner(t, f)
+	if err := os.Remove(filepath.Join(ToolDir(f.prefix, target), "cc1plus")); err != nil {
+		t.Fatal(err)
+	}
+
+	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target, "", "")
+
+	fails := rep.Failures()
+	if len(fails) != 1 || fails[0].Name != "gcc-finds-cc1plus" {
+		t.Fatalf("expected exactly one gcc-finds-cc1plus failure:\n%s", rep)
+	}
+	if !strings.Contains(rep.Err().Error(), "cc1plus") {
+		t.Errorf("the message must name the file:\n%s", rep)
+	}
 }

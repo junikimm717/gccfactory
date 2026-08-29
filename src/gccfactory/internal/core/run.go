@@ -200,8 +200,15 @@ func tryBuild(ctx context.Context, e *Env, n *node) error {
 	e.Log.Info("building", "job", n.slug, "key", short(n.key), "logs", r.Dir())
 	err = n.job.Build(ctx, e, r, work, stage)
 	if err != nil {
-		os.RemoveAll(stage)
 		e.Log.Error("build failed", "job", n.slug, "work", work, "logs", r.Dir())
+		// Verification runs inside Build, so this is exactly the tree you need to
+		// look at when a toolchain builds but does not work. It carries no
+		// manifest, so leaving it can never be mistaken for an artifact.
+		if keepScratch(e) {
+			e.Log.Info("keeping staging tree", "job", n.slug, "stage", stage)
+		} else {
+			os.RemoveAll(stage)
+		}
 		return err
 	}
 
@@ -214,7 +221,7 @@ func tryBuild(ctx context.Context, e *Env, n *node) error {
 		os.RemoveAll(stage)
 		return err
 	}
-	if e.KeepWork || os.Getenv("GCCFACTORY_KEEP_WORK") != "" {
+	if keepScratch(e) {
 		e.Log.Info("keeping work tree", "job", n.slug, "work", work)
 	} else {
 		os.RemoveAll(work)
@@ -222,6 +229,10 @@ func tryBuild(ctx context.Context, e *Env, n *node) error {
 	r.Step("done")
 	e.Log.Info("built", "job", n.slug, "key", short(n.key), "duration", dur.Round(time.Millisecond))
 	return nil
+}
+
+func keepScratch(e *Env) bool {
+	return e.KeepWork || os.Getenv("GCCFACTORY_KEEP_WORK") != ""
 }
 
 // stampManifest writes .gccfactory.json into the staging dir. It is the last
@@ -244,6 +255,27 @@ func stampManifest(e *Env, n *node, stage string, dur time.Duration) error {
 	})
 }
 
+// removeAll is a seam: a test substitutes a blocking one to prove that GCStale
+// hands the unlinking off instead of doing it on the calling goroutine.
+var removeAll = os.RemoveAll
+
+// Run waits on trashWG, so the unlinks land during a build rather than before
+// its first line of output; a short command may exit first, which only leaves
+// the work for the next run. Bounded because unlinking is seek-bound.
+func sweepTrash(dirs []string) {
+	const parallel = 8
+	sem := make(chan struct{}, parallel)
+	for _, d := range dirs {
+		trashWG.Add(1)
+		go func(d string) {
+			defer trashWG.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			removeAll(d)
+		}(d)
+	}
+}
+
 // publish swaps stage into place with renames only, so readers see either the
 // old artifact or the new one and never a half-populated directory. Caller
 // must hold the job's exclusive lock.
@@ -256,11 +288,7 @@ func publish(e *Env, stage, artifact string) error {
 		if err := os.Rename(artifact, trash); err != nil {
 			return fmt.Errorf("move old artifact aside: %w", err)
 		}
-		trashWG.Add(1)
-		go func() {
-			defer trashWG.Done()
-			os.RemoveAll(trash)
-		}()
+		sweepTrash([]string{trash})
 	} else if !os.IsNotExist(err) {
 		return err
 	}
