@@ -259,10 +259,9 @@ func stampManifest(e *Env, n *node, stage string, dur time.Duration) error {
 // hands the unlinking off instead of doing it on the calling goroutine.
 var removeAll = os.RemoveAll
 
-// sweepTrash deletes retired directories off the critical path. Run waits on
-// trashWG, so the unlinks land during a build rather than before its first line
-// of output; a short command may exit first, which only leaves the work for the
-// next run to pick up. Bounded because unlinking is seek-bound, not CPU-bound.
+// Run waits on trashWG, so the unlinks land during a build rather than before
+// its first line of output; a short command may exit first, which only leaves
+// the work for the next run. Bounded because unlinking is seek-bound.
 func sweepTrash(dirs []string) {
 	const parallel = 8
 	sem := make(chan struct{}, parallel)

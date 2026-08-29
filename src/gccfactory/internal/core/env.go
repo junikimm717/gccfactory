@@ -120,11 +120,10 @@ func (e *Env) EnsureDirs() error {
 // dead builders. It is best-effort: losing a race with another collector is
 // harmless.
 //
-// Retiring is a rename into .trash/ and nothing more. EnsureDirs calls this on
-// every command before anything is printed, and unlinking a scratch tree is
-// hundreds of thousands of syscalls: a killed --workers 96 run leaves that many
-// trees again, which turned every subsequent startup into minutes of silence.
-// The rename is O(1) per directory and the deletion happens behind Run.
+// EnsureDirs calls this on every command before anything is printed, and
+// unlinking a scratch tree is hundreds of thousands of syscalls: a killed
+// --workers 96 run leaves one tree per worker, which turned every subsequent
+// startup into minutes of silence. Renaming is O(1); Run does the deleting.
 func (e *Env) GCStale(age time.Duration) {
 	e.gcHeartbeats()
 	var doomed []string
@@ -169,8 +168,8 @@ func (e *Env) retire(path, name string) (string, error) {
 	return trash, os.Rename(path, trash)
 }
 
-// abandonedTrash finds trash a process died before deleting. The age bound is
-// what keeps it from touching a live process's in-flight deletion.
+// The age bound is what keeps this from adopting a live process's in-flight
+// deletion.
 func (e *Env) abandonedTrash(age time.Duration) []string {
 	ents, err := os.ReadDir(e.Path(DirTrash))
 	if err != nil {
