@@ -175,16 +175,7 @@ func CrossToolchain(ctx context.Context, r Runner, workDir, prefix string, t tri
 		cc: []string{gcc}, cxx: []string{gxx}, env: map[string]string{},
 		target: &t, prefix: prefix,
 	}
-	if qemu == "" {
-		rep.Failf("qemu", "no qemu binary given for %s; cannot run the probe suite", t)
-		h.norun = true
-	} else {
-		h.runPrefix = []string{qemu, "-L", sysroot}
-		h.runEnv = map[string]string{"QEMU_LD_PREFIX": sysroot}
-		if ld := LoaderPath(sysroot, t); ld != "" {
-			h.runFallback = []string{qemu, ld}
-		}
-	}
+	h.setTargetRun(ctx, qemu, sysroot, t)
 	if !h.version(ctx, "gcc-runs", []string{gcc, "-dumpmachine"}, t.Raw) {
 		return rep
 	}
@@ -219,12 +210,6 @@ func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, ho
 	if !mustExec(rep, gcc) || !mustExec(rep, gxx) {
 		return rep
 	}
-	if qemuHost == "" || qemuTarget == "" {
-		rep.Failf("qemu", "need both a host qemu (%s) and a target qemu (%s); got %q and %q",
-			strings.Join(QemuNames(host), "/"), strings.Join(QemuNames(t), "/"), qemuHost, qemuTarget)
-		return rep
-	}
-
 	// (b) how do we have to launch a HOST binary?
 	hostInfo, err := ReadELF(gcc)
 	if err != nil {
@@ -235,42 +220,26 @@ func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, ho
 	if hostSysroot == "" {
 		hostSysroot = guessHostSysroot(prefix, host)
 	}
-	qemuArgs := []string{qemuHost}
-	hostEnv := map[string]string{}
-	switch {
-	case hostInfo.Static:
+	if hostInfo.Static {
 		rep.Pass("host-link-mode", "%s is static; no host sysroot needed", filepath.Base(gcc))
-	case hostSysroot != "":
-		qemuArgs = append(qemuArgs, "-L", hostSysroot)
-		hostEnv["QEMU_LD_PREFIX"] = hostSysroot
-		rep.Pass("host-link-mode", "%s is dynamic (%s); using host sysroot %s",
+	} else {
+		rep.Pass("host-link-mode", "%s is dynamic (%s); host sysroot %q",
 			filepath.Base(gcc), hostInfo.Interp, hostSysroot)
-	default:
-		rep.Failf("host-link-mode", "%s is dynamically linked against %s but no host sysroot is known;"+
-			" pass ensure.WithHostSysroot(<cross:%s prefix>/%s)", gcc, hostInfo.Interp, host, host)
-		return rep
 	}
 
 	targetSysroot := Sysroot(prefix, t)
 	h := &harness{
 		r: r, rep: rep, work: filepath.Join(workDir, "canadian-"+host.Raw+"-"+t.Raw), opts: o,
-		cc:  append(append([]string(nil), qemuArgs...), gcc),
-		cxx: append(append([]string(nil), qemuArgs...), gxx),
-		env: hostEnv, target: &t, prefix: prefix,
-		launch:    append([]string(nil), qemuArgs...),
-		runPrefix: []string{qemuTarget, "-L", targetSysroot},
-		runEnv:    map[string]string{"QEMU_LD_PREFIX": targetSysroot},
+		cc: []string{gcc}, cxx: []string{gxx}, env: map[string]string{},
+		target: &t, prefix: prefix,
 	}
-	if ld := LoaderPath(targetSysroot, t); ld != "" {
-		h.runFallback = []string{qemuTarget, ld}
-	}
-
 	// Staged preflight so a systemic problem is reported once, not 40 times.
-	if !h.version(ctx, "gcc-runs-on-host", append(append([]string(nil), h.cc...), "-dumpmachine"), t.Raw) {
-		h.rep.Failf("preflight", "the toolchain's gcc could not even print its target under %s;"+
-			" every probe below would fail for the same reason", filepath.Base(qemuHost))
+	// chooseHostLaunch is also what establishes that HOST binaries run at all,
+	// which is why nothing here requires a qemu binary to exist.
+	if !h.chooseHostLaunch(ctx, gcc, gxx, host, t, hostInfo, hostSysroot, qemuHost) {
 		return rep
 	}
+	h.setTargetRun(ctx, qemuTarget, targetSysroot, t)
 	if !h.progNames(ctx, prefix, t) {
 		return rep
 	}

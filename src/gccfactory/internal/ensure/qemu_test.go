@@ -67,13 +67,16 @@ func TestQemuNames(t *testing.T) {
 	}
 }
 
-// TestCrossToolchainNoQemu: without a qemu we still compile everything and
-// check the ELF identity, but say plainly that nothing was executed.
-func TestCrossToolchainNoQemu(t *testing.T) {
+// TestCrossToolchainNoExecRoute: when the machine has no way to execute target
+// binaries -- no qemu named AND no kernel route -- we still compile everything
+// and check the ELF identity, but say plainly that nothing was executed. The
+// trigger is the missing capability, not a missing file with a known name.
+func TestCrossToolchainNoExecRoute(t *testing.T) {
 	host := triple.MustParse("x86_64-linux-musl")
 	target := triple.MustParse("i386-linux-musl")
 	f := newFakeToolchain(t, host, target)
 	r := newFakeRunner(t, f)
+	r.noDirectExec, r.buildBins = true, true
 
 	rep := CrossToolchain(context.Background(), r, t.TempDir(), f.prefix, target, "",
 		WithOptLevels("-O0"), WithProbes(Probes()[0]))
@@ -84,7 +87,7 @@ func TestCrossToolchainNoQemu(t *testing.T) {
 				ran++
 			}
 			built++
-			if !strings.Contains(c.Detail, "not run: no qemu") {
+			if !strings.Contains(c.Detail, "not run: nothing here can execute it") {
 				t.Errorf("%s: detail = %q", c.Name, c.Detail)
 			}
 		}
@@ -93,7 +96,7 @@ func TestCrossToolchainNoQemu(t *testing.T) {
 		t.Fatalf("built %d ran %d\n%s", built, ran, rep)
 	}
 	if rep.OK() {
-		t.Fatalf("a missing qemu must be reported as a failure:\n%s", rep)
+		t.Fatalf("having no way to run target binaries must be a failure:\n%s", rep)
 	}
 }
 

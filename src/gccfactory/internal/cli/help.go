@@ -42,7 +42,9 @@ const globalHelp = `Global flags (accepted before or after the command):
                    The ./src/gccf shim always sets this for you.
   --qemu-dir DIR   where qemu-<arch>-static lives (default /usr/bin). May instead
                    be a template containing %s, e.g. /opt/qemu/bin/qemu-%s.
-                   qemu is how we prove a HOST binary really runs on HOST.
+                   Only a fallback: foreign binaries are exec'd directly when
+                   the kernel can route them. Run "gccfactory doctor" to see
+                   which route each architecture actually takes here.
   --color WHEN     auto|always|never (default auto: color only on a terminal).
   -v, --verbose    mirror every command's output to the terminal as it runs.
                    Without it, output still goes to dist/logs/ in full.`

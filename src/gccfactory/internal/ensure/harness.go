@@ -234,7 +234,7 @@ func (h *harness) probe(ctx context.Context, p Probe, t triple.Triple, opt strin
 
 	if h.norun {
 		h.rep.Add(Check{Name: name, OK: true, Skipped: true, Dur: time.Since(start),
-			Detail: "built ok (" + desc + ") but not run: no qemu"})
+			Detail: "built ok (" + desc + ") but not run: nothing here can execute it"})
 		return
 	}
 
@@ -343,7 +343,7 @@ func (h *harness) ltoArchive(ctx context.Context, p Probe) {
 	}
 	if h.norun {
 		h.rep.Add(Check{Name: "lto-archive", OK: true, Skipped: true, Dur: time.Since(start),
-			Detail: "built ok but not run: no qemu"})
+			Detail: "built ok but not run: nothing here can execute it"})
 		return
 	}
 	stdout, degraded, runOut, runArgv, err := h.runBinary(ctx, "lto-archive", dir, "./probe")
@@ -441,7 +441,7 @@ func (h *harness) ltoPlugin(ctx context.Context, p Probe) {
 	}
 	if h.norun {
 		h.rep.Add(Check{Name: "lto-plugin-link", OK: true, Skipped: true, Dur: time.Since(start),
-			Detail: "built ok but not run: no qemu"})
+			Detail: "built ok but not run: nothing here can execute it"})
 		return
 	}
 	stdout, degraded, runOut, runArgv, err := h.runBinary(ctx, "lto-plugin-link", dir, "./probe")

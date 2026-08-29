@@ -71,6 +71,8 @@ type fakeRunner struct {
 	pluginFlag   string // a flag the compiler rejects, as one with no linker plugin does
 	fatObjects   bool   // plain nm sees the symbols: the objects are not bitcode-only
 	loaderBroken bool   // qemu -L <sysroot> cannot find the interpreter
+	noDirectExec bool   // no binfmt_misc: only a qemu launcher can run foreign binaries
+	buildBins    bool   // <prefix>/bin holds BUILD binaries (a cross toolchain), which always run
 }
 
 func newFakeRunner(t *testing.T, f *fakeToolchain) *fakeRunner {
@@ -87,6 +89,12 @@ func (f *fakeRunner) Output(ctx context.Context, c Cmd) ([]byte, error) {
 	f.cmds = append(f.cmds, c)
 	f.mu.Unlock()
 
+	// A cross toolchain's own binaries are BUILD ELFs, so they run natively even
+	// on a machine with no route to the target arch; only the sysroot is foreign.
+	if f.noDirectExec && strings.HasPrefix(c.Args[0], f.prefix) &&
+		!(f.buildBins && strings.HasPrefix(c.Args[0], filepath.Join(f.prefix, "bin"))) {
+		return []byte(c.Args[0] + ": exec format error\n"), fakeExitErr{}
+	}
 	if has(c.Args, "-dumpmachine") {
 		return []byte(f.target.Raw + "\n"), nil
 	}
@@ -205,14 +213,29 @@ func has(ss []string, s string) bool {
 	return false
 }
 
+// qemuLaunch only accepts a path that exists and is executable, so tests that
+// exercise the qemu route have to provide a real file.
+func fakeQemu(t *testing.T, dir, name string) string {
+	t.Helper()
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 func TestCanadianToolchainHappyPath(t *testing.T) {
 	host := triple.MustParse("x86_64-linux-musl")
 	target := triple.MustParse("aarch64-linux-musl")
 	f := newFakeToolchain(t, host, target)
 	r := newFakeRunner(t, f)
+	r.noDirectExec = true
+	qDir := t.TempDir()
+	qHost := fakeQemu(t, qDir, "qemu-x86_64")
+	qTarget := fakeQemu(t, qDir, "qemu-aarch64")
 
 	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
-		"/usr/bin/qemu-x86_64", "/usr/bin/qemu-aarch64")
+		qHost, qTarget)
 	if !rep.OK() {
 		t.Fatalf("expected a clean report:\n%s", rep)
 	}
@@ -238,10 +261,10 @@ func TestCanadianToolchainHappyPath(t *testing.T) {
 	// The compiler must have been invoked through the host qemu.
 	var sawQemuCompile, sawQemuRun bool
 	for _, c := range r.cmds {
-		if c.Args[0] == "/usr/bin/qemu-x86_64" && has(c.Args, "-o") {
+		if c.Args[0] == qHost && has(c.Args, "-o") {
 			sawQemuCompile = true
 		}
-		if strings.Contains(strings.Join(c.Args, " "), "/usr/bin/qemu-aarch64 -L "+Sysroot(f.prefix, target)+" ./probe") {
+		if strings.Contains(strings.Join(c.Args, " "), qTarget+" -L "+Sysroot(f.prefix, target)+" ./probe") {
 			sawQemuRun = true
 		}
 	}
@@ -542,9 +565,13 @@ func TestLoaderFallbackIsUsedAndReported(t *testing.T) {
 	f := newFakeToolchain(t, host, target)
 	r := newFakeRunner(t, f)
 	r.loaderBroken = true
+	r.noDirectExec = true
+	qDir := t.TempDir()
+	qHost := fakeQemu(t, qDir, "qemu-x86_64")
+	qTarget := fakeQemu(t, qDir, "qemu-aarch64")
 
 	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
-		"qemu-x86_64", "qemu-aarch64", WithOptLevels("-O2"), WithProbes(Probes()[0]))
+		qHost, qTarget, WithOptLevels("-O2"), WithProbes(Probes()[0]))
 	if !rep.OK() {
 		t.Fatalf("the fallback must rescue the run:\n%s", rep)
 	}
@@ -580,10 +607,70 @@ func TestLoaderFallbackIsUsedAndReported(t *testing.T) {
 	}
 	r2 := newFakeRunner(t, f2)
 	r2.loaderBroken = true
+	r2.noDirectExec = true
 	rep2 := CanadianToolchain(context.Background(), r2, t.TempDir(), f2.prefix, host, target,
-		"qemu-x86_64", "qemu-aarch64", WithOptLevels("-O2"), WithProbes(Probes()[0]))
+		qHost, qTarget, WithOptLevels("-O2"), WithProbes(Probes()[0]))
 	if rep2.OK() {
 		t.Fatalf("with no loader at all this must fail:\n%s", rep2)
+	}
+}
+
+// Plain exec is the only mode gcc can fork cc1/as/ld in, so it must win over a
+// qemu launcher that would also have worked.
+func TestCanadianToolchainPrefersPlainExec(t *testing.T) {
+	host := triple.MustParse("x86_64-linux-musl")
+	target := triple.MustParse("aarch64-linux-musl")
+	f := newFakeToolchain(t, host, target)
+	r := newFakeRunner(t, f)
+	qDir := t.TempDir()
+	qHost := fakeQemu(t, qDir, "qemu-x86_64")
+	qTarget := fakeQemu(t, qDir, "qemu-aarch64")
+
+	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target,
+		qHost, qTarget, WithOptLevels("-O0"), WithProbes(Probes()[0]))
+	if !rep.OK() {
+		t.Fatalf("expected a clean report:\n%s", rep)
+	}
+	var hostLaunchOK bool
+	for _, c := range rep.Checks {
+		if c.Name == "host-launch" && c.OK {
+			hostLaunchOK = true
+		}
+	}
+	if !hostLaunchOK {
+		t.Fatalf("expected a passing host-launch check:\n%s", rep)
+	}
+	for _, c := range r.cmds {
+		if c.Args[0] == qHost || c.Args[0] == qTarget {
+			t.Fatalf("a working plain exec must not fall back to qemu, got %v", c.Args)
+		}
+	}
+}
+
+// With neither binfmt_misc (modelled by noDirectExec) nor a qemu binary, there
+// is no way to run HOST binaries at all -- that must fail fast and legibly,
+// not fall through into a doomed probe matrix.
+func TestCanadianToolchainNoRouteFailsCleanly(t *testing.T) {
+	host := triple.MustParse("x86_64-linux-musl")
+	target := triple.MustParse("aarch64-linux-musl")
+	f := newFakeToolchain(t, host, target)
+	r := newFakeRunner(t, f)
+	r.noDirectExec = true
+
+	rep := CanadianToolchain(context.Background(), r, t.TempDir(), f.prefix, host, target, "", "")
+	if rep.OK() {
+		t.Fatalf("no route to run HOST binaries must fail:\n%s", rep)
+	}
+	if len(rep.Failures()) != 1 || rep.Failures()[0].Name != "host-launch" {
+		t.Fatalf("expected a single host-launch failure:\n%s", rep)
+	}
+	if !strings.Contains(rep.Err().Error(), "binfmt_misc") {
+		t.Errorf("remedy must mention binfmt_misc:\n%s", rep.Err())
+	}
+	for _, c := range rep.Checks {
+		if strings.HasPrefix(c.Name, "probe:") {
+			t.Fatalf("no probe should run once there is no route to execute HOST binaries:\n%s", rep)
+		}
 	}
 }
 

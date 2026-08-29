@@ -115,6 +115,7 @@ func runBuild(g *Global, args []string) error {
 		return usagef("nothing selected")
 	}
 
+	warnUnroutable(os.Stderr, g, hosts, targets)
 	if *dryRun {
 		return printPlan(e, roots)
 	}

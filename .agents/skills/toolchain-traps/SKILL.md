@@ -437,6 +437,38 @@ level and foreign-binary exec works, including **nested** exec (a HOST-arch gcc
 under `qemu-<host>` forking HOST-arch `cc1`/`as`/`ld`). Verify with a real
 foreign binary; do not conclude from the missing mount that it's unavailable.
 
+## `<T>-gcc: fatal error` / `exec format error` on another machine
+
+The toolchain is fine; the machine cannot exec foreign binaries. Two facts
+together explain nearly every case:
+
+- **A qemu-user binary on disk is not a capability.** `qemu-<h> <gcc>` runs the
+  gcc *driver* and nothing more: the driver forks `cc1`, `as` and `collect2`,
+  and those execs are serviced by the kernel, not by the emulator. Nesting works
+  only when `binfmt_misc` carries a registration for that architecture.
+- **A registration with no qemu binary at the expected path is fine.** With
+  binfmt in place you exec the foreign binary directly and never name qemu.
+
+So "does `/usr/bin/qemu-<arch>-static` exist" answers neither question — it is
+neither necessary nor sufficient. Run `gccf doctor`: it reports, per
+architecture, whether the route is `native`, `binfmt_misc`, `qemu only` (fatal
+for a HOST, fine for a TARGET) or `none`, and prints the registration command
+for whatever is missing. It needs no `dist/` and builds nothing, so run it
+*before* a long build, not after it fails.
+
+Two traps worth knowing:
+
+- The build machine's own architecture needs no qemu and gets no binfmt entry.
+  `ls /proc/sys/fs/binfmt_misc/` will never show `qemu-x86_64` on x86_64, and
+  that absence is not a fault.
+- An aarch64 server kernel often has **no AArch32 EL0 at all** (Graviton, so
+  `c8g`), so `arm-linux-musleabi*` binaries cannot run natively there the way
+  `i386` runs on x86_64. Those targets need a registered `qemu-arm`.
+
+`gccfactory` requires a qemu path nowhere: `ensure` probes plain exec first and
+falls back to a named qemu only when the binary is dynamic and its loader lives
+inside a sysroot. See `internal/ensure/launch.go`.
+
 ## `libcody`: `no matching function for call to 'S2C(const char8_t [2])'`
 
 Every `cross_<T>` job dies in `gcc-all-gcc` compiling `libcody/buffer.cc` and

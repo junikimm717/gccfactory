@@ -15,18 +15,22 @@ import (
 
 var cmdVerify = &command{
 	Name:     "verify",
-	Short:    "prove built toolchains actually work (compile + run under qemu)",
+	Short:    "prove built toolchains actually work (compile, then run what they emit)",
 	Synopsis: "gccfactory verify [--host LIST] [--target LIST] [--native] [--cross] [--workers N]",
 	Long: `Runs the ensure suite. This is a real proof, not a smoke test:
 
   * every binary in <prefix>/bin is checked to be an ELF for the HOST arch
   * the musl-cross-make tool surface (gcc, g++, ar, ld, strip, ..., make) must
     all be present and executable
-  * the compilers are executed under qemu-<host> to compile a probe suite for
-    TARGET (printf, libm, pthreads, TLS, atomics, C++ iostreams, exceptions,
-    std::regex/thread, dlopen of a -fPIC shared object, and -static), at -O0 and
-    -O2, and each resulting binary is ELF-checked for TARGET and then run under
-    qemu-<target>
+  * the compilers are executed -- natively, via binfmt_misc, or under
+    qemu-<host>, whichever this machine actually supports -- to compile a probe
+    suite for TARGET (printf, libm, pthreads, TLS, atomics, C++ iostreams,
+    exceptions, std::regex/thread, dlopen of a -fPIC shared object, and
+    -static), at -O0 and -O2, and each resulting binary is ELF-checked for
+    TARGET and then run
+
+` + "`gccfactory doctor`" + ` reports how each architecture gets executed here,
+and is worth running before a long build rather than after it.
 
 With no --host/--target, everything currently built in dist/ is verified, so
 ` + "`gccfactory verify`" + ` on its own is always a valid thing to type.

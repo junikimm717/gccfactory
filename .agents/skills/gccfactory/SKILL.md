@@ -48,6 +48,7 @@ everything is one of these:
 |---|---|
 | what commands exist, what a flag does | `./src/gccf help`, `./src/gccf help <cmd>` — **authoritative**, kept current |
 | what's built / stale / building right now | `./src/gccf status` |
+| can this machine run arch X's binaries at all | `./src/gccf doctor` — run it *before* a long build |
 | how many cores, how much RAM a job needs | *Parallelism and resources*, below |
 | what "verified" actually means | *How verification works*, below |
 | why a built toolchain misbehaves | `toolchain-traps` skill — symptom-first |
@@ -188,11 +189,20 @@ Three levels, increasing in strength:
 |---|---|
 | `NativeToolchain` | the BUILD machine's own gcc/g++ can compile and run C and C++. Output is not ELF-asserted (BUILD is whatever the container is). |
 | `CrossToolchain` | a BUILD→T toolchain: its binaries are BUILD ELFs, the tool surface is complete, probes compile for T and run under `qemu-<T>`. |
-| `CanadianToolchain` | the real proof: every binary in `<prefix>/bin` is a **HOST** ELF, those binaries **run under `qemu-<host>`**, what they emit is a **TARGET** ELF, and that runs correctly under `qemu-<target>`. |
+| `CanadianToolchain` | the real proof: every binary in `<prefix>/bin` is a **HOST** ELF, those binaries **actually run here**, what they emit is a **TARGET** ELF, and that runs correctly too. |
 
 The canadian level is the one that matters, and the nesting is the trick: a
 compiler for HOST is executed under one qemu, and its output under another.
 That is what catches a "canadian" build that silently produced BUILD binaries.
+
+**How foreign binaries get executed is probed, never assumed.** `ensure` does
+not require a `qemu-<arch>` binary to exist: `chooseHostLaunch` tries a plain
+exec first and only falls back to a named qemu launcher if that fails. Plain
+exec is preferred because it is the *only* mode in which gcc can fork
+`cc1`/`as`/`ld` — a qemu launcher covers the one process it is handed, so a
+machine with a qemu binary but no `binfmt_misc` registration can start the gcc
+driver and nothing under it. `gccf doctor` reports the route per architecture;
+see `toolchain-traps` for the failure shapes.
 
 **The probe suite** (`internal/ensure/probes/*.c`, embedded via `go:embed`).
 Each probe is a self-checking program: compile it, assert the ELF identity of
