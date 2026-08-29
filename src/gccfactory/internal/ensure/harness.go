@@ -608,3 +608,86 @@ func shJoin(argv []string) string {
 	}
 	return strings.Join(out, " ")
 }
+
+// These live in libexec/, which no ELF or tool-surface check covers, so a
+// missing or unloadable cc1plus surfaces only as "cannot execute 'cc1plus'"
+// repeated across every C++ probe.
+var compilerBackends = []string{"cc1", "cc1plus"}
+
+func (h *harness) backends(ctx context.Context) bool {
+	dir := h.mkdir("preflight")
+	ok := true
+	for _, tool := range compilerBackends {
+		name := "gcc-finds-" + tool
+		argv := append(append([]string(nil), h.cc...), "-print-prog-name="+tool)
+		start := time.Now()
+		out, err := h.exec(ctx, name, dir, argv, h.env, h.opts.runTimeout)
+		got := strings.TrimSpace(string(out))
+		if err != nil {
+			h.rep.Add(Check{Name: name, Err: err, Dur: time.Since(start), Detail: execDetail(argv, dir, out)})
+			ok = false
+			continue
+		}
+		if !filepath.IsAbs(got) {
+			h.rep.Add(Check{Name: name, Dur: time.Since(start),
+				Err: fmt.Errorf("gcc resolved %s to the bare name %q", tool, got),
+				Detail: fmt.Sprintf("cmd: %s\n%s was not installed into this toolchain;"+
+					" the C++ front end is built by gcc's all-host/install-host targets,"+
+					" so an install that skipped it leaves g++ unable to compile anything",
+					shJoin(argv), tool)})
+			ok = false
+			continue
+		}
+		if d, err := backendDetail(got, h.env["QEMU_LD_PREFIX"]); err != nil {
+			h.rep.Add(Check{Name: name, Err: err, Dur: time.Since(start),
+				Detail: fmt.Sprintf("cmd: %s\ngcc will exec %s and fail; this is what"+
+					" \"cannot execute '%s'\" means", shJoin(argv), got, tool)})
+			ok = false
+			continue
+		} else {
+			h.rep.Add(Check{Name: name, OK: true, Dur: time.Since(start), Detail: d})
+		}
+	}
+	return ok
+}
+
+// A dynamically linked backend whose interpreter is absent fails with ENOENT
+// and names the backend, not the missing loader, which reads exactly like a
+// missing file. sysroot is where a qemu launcher resolves the interpreter (its
+// -L), empty when the binary is exec'd plainly.
+func backendDetail(path, sysroot string) (string, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("gcc points at %s, which is not there: %w", path, err)
+	}
+	if !isExec(st) {
+		return "", fmt.Errorf("%s is not executable (mode %s)", path, st.Mode())
+	}
+	info, err := ReadELF(path)
+	if err != nil {
+		return "", fmt.Errorf("%s is not readable as an ELF: %w", path, err)
+	}
+	if info.Static {
+		return fmt.Sprintf("%s (%s)", path, info), nil
+	}
+	if !loaderReachable(info.Interp, sysroot) {
+		where := "on this machine"
+		if sysroot != "" {
+			where = "at that path or under " + sysroot
+		}
+		return "", fmt.Errorf("%s is dynamically linked against %s, which does not exist %s:"+
+			" exec fails with ENOENT and gcc reports it as \"cannot execute\"", path, info.Interp, where)
+	}
+	return fmt.Sprintf("%s (%s)", path, info), nil
+}
+
+func loaderReachable(interp, sysroot string) bool {
+	if _, err := os.Stat(interp); err == nil {
+		return true
+	}
+	if sysroot == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(sysroot, interp))
+	return err == nil
+}
