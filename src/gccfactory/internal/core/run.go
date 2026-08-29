@@ -200,8 +200,15 @@ func tryBuild(ctx context.Context, e *Env, n *node) error {
 	e.Log.Info("building", "job", n.slug, "key", short(n.key), "logs", r.Dir())
 	err = n.job.Build(ctx, e, r, work, stage)
 	if err != nil {
-		os.RemoveAll(stage)
 		e.Log.Error("build failed", "job", n.slug, "work", work, "logs", r.Dir())
+		// Verification runs inside Build, so this is exactly the tree you need to
+		// look at when a toolchain builds but does not work. It carries no
+		// manifest, so leaving it can never be mistaken for an artifact.
+		if keepScratch(e) {
+			e.Log.Info("keeping staging tree", "job", n.slug, "stage", stage)
+		} else {
+			os.RemoveAll(stage)
+		}
 		return err
 	}
 
@@ -214,7 +221,7 @@ func tryBuild(ctx context.Context, e *Env, n *node) error {
 		os.RemoveAll(stage)
 		return err
 	}
-	if e.KeepWork || os.Getenv("GCCFACTORY_KEEP_WORK") != "" {
+	if keepScratch(e) {
 		e.Log.Info("keeping work tree", "job", n.slug, "work", work)
 	} else {
 		os.RemoveAll(work)
@@ -222,6 +229,10 @@ func tryBuild(ctx context.Context, e *Env, n *node) error {
 	r.Step("done")
 	e.Log.Info("built", "job", n.slug, "key", short(n.key), "duration", dur.Round(time.Millisecond))
 	return nil
+}
+
+func keepScratch(e *Env) bool {
+	return e.KeepWork || os.Getenv("GCCFACTORY_KEEP_WORK") != ""
 }
 
 // stampManifest writes .gccfactory.json into the staging dir. It is the last

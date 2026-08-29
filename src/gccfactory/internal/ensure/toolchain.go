@@ -182,6 +182,9 @@ func CrossToolchain(ctx context.Context, r Runner, workDir, prefix string, t tri
 	if !h.progNames(ctx, prefix, t) {
 		return rep
 	}
+	if !h.backends(ctx) {
+		return rep
+	}
 	h.runAll(ctx, t)
 	return rep
 }
@@ -241,6 +244,9 @@ func CanadianToolchain(ctx context.Context, r Runner, workDir, prefix string, ho
 	}
 	h.setTargetRun(ctx, qemuTarget, targetSysroot, t)
 	if !h.progNames(ctx, prefix, t) {
+		return rep
+	}
+	if !h.backends(ctx) {
 		return rep
 	}
 	if !h.preflightCompile(ctx) {
