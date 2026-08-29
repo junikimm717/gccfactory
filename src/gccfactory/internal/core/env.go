@@ -115,12 +115,19 @@ func (e *Env) EnsureDirs() error {
 	return nil
 }
 
-// GCStale removes work/ and .staging/ directories whose owning pid is gone and
+// GCStale retires work/ and .staging/ directories whose owning pid is gone and
 // which have not been touched for at least age, plus heartbeats left behind by
 // dead builders. It is best-effort: losing a race with another collector is
 // harmless.
+//
+// Retiring is a rename into .trash/ and nothing more. EnsureDirs calls this on
+// every command before anything is printed, and unlinking a scratch tree is
+// hundreds of thousands of syscalls: a killed --workers 96 run leaves that many
+// trees again, which turned every subsequent startup into minutes of silence.
+// The rename is O(1) per directory and the deletion happens behind Run.
 func (e *Env) GCStale(age time.Duration) {
 	e.gcHeartbeats()
+	var doomed []string
 	for _, root := range []string{e.Path(DirWork), e.Path(DirStaging)} {
 		ents, err := os.ReadDir(root)
 		if err != nil {
@@ -139,12 +146,45 @@ func (e *Env) GCStale(age time.Duration) {
 				continue
 			}
 			path := filepath.Join(root, ent.Name())
-			e.Log.Info("collecting stale scratch dir", "path", path, "dead_pid", pid)
-			if err := os.RemoveAll(path); err != nil && !os.IsNotExist(err) {
-				e.Log.Warn("could not remove stale dir", "path", path, "err", err)
+			trash, err := e.retire(path, ent.Name())
+			if err != nil {
+				// A concurrent collector getting there first is the expected race.
+				if !os.IsNotExist(err) {
+					e.Log.Warn("could not retire stale dir", "path", path, "err", err)
+				}
+				continue
 			}
+			e.Log.Info("collecting stale scratch dir", "path", path, "dead_pid", pid)
+			doomed = append(doomed, trash)
 		}
 	}
+	sweepTrash(append(doomed, e.abandonedTrash(age)...))
+}
+
+func (e *Env) retire(path, name string) (string, error) {
+	trash := e.Path(DirTrash, fmt.Sprintf("%s.%d.%s", name, os.Getpid(), randHex(4)))
+	if err := os.MkdirAll(e.Path(DirTrash), 0o755); err != nil {
+		return "", err
+	}
+	return trash, os.Rename(path, trash)
+}
+
+// abandonedTrash finds trash a process died before deleting. The age bound is
+// what keeps it from touching a live process's in-flight deletion.
+func (e *Env) abandonedTrash(age time.Duration) []string {
+	ents, err := os.ReadDir(e.Path(DirTrash))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, ent := range ents {
+		info, err := ent.Info()
+		if err != nil || time.Since(info.ModTime()) < age {
+			continue
+		}
+		out = append(out, e.Path(DirTrash, ent.Name()))
+	}
+	return out
 }
 
 // gcHeartbeats drops heartbeat files whose builder is gone, so `status` never

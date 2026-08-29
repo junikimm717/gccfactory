@@ -244,6 +244,28 @@ func stampManifest(e *Env, n *node, stage string, dur time.Duration) error {
 	})
 }
 
+// removeAll is a seam: a test substitutes a blocking one to prove that GCStale
+// hands the unlinking off instead of doing it on the calling goroutine.
+var removeAll = os.RemoveAll
+
+// sweepTrash deletes retired directories off the critical path. Run waits on
+// trashWG, so the unlinks land during a build rather than before its first line
+// of output; a short command may exit first, which only leaves the work for the
+// next run to pick up. Bounded because unlinking is seek-bound, not CPU-bound.
+func sweepTrash(dirs []string) {
+	const parallel = 8
+	sem := make(chan struct{}, parallel)
+	for _, d := range dirs {
+		trashWG.Add(1)
+		go func(d string) {
+			defer trashWG.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			removeAll(d)
+		}(d)
+	}
+}
+
 // publish swaps stage into place with renames only, so readers see either the
 // old artifact or the new one and never a half-populated directory. Caller
 // must hold the job's exclusive lock.
@@ -256,11 +278,7 @@ func publish(e *Env, stage, artifact string) error {
 		if err := os.Rename(artifact, trash); err != nil {
 			return fmt.Errorf("move old artifact aside: %w", err)
 		}
-		trashWG.Add(1)
-		go func() {
-			defer trashWG.Done()
-			os.RemoveAll(trash)
-		}()
+		sweepTrash([]string{trash})
 	} else if !os.IsNotExist(err) {
 		return err
 	}
