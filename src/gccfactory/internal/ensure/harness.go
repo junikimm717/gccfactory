@@ -27,7 +27,8 @@ type harness struct {
 	prefix string         // toolchain prefix, "" for a native compiler
 	launch []string       // argv prefix that runs a HOST binary (qemu ...), nil if native
 
-	runPrefix   []string          // argv prefix to execute a produced binary
+	runPrefix   []string          // argv prefix for static probes and foreign dynamic (qemu -L)
+	runLoader   []string          // sysroot loader --library-path …; used instead of runPrefix for dynamic native
 	runFallback []string          // as runPrefix, but invoking the musl loader directly
 	runEnv      map[string]string // env for run commands
 	norun       bool              // compile and inspect only
@@ -250,13 +251,12 @@ func (h *harness) probe(ctx context.Context, p Probe, t triple.Triple, opt strin
 	h.rep.Add(Check{Name: name, OK: true, Dur: time.Since(start), Detail: joinDetail(degraded, desc)})
 }
 
-// runBinary executes a freshly built target binary. If `qemu -L <sysroot>`
-// cannot find the interpreter -- which happens when the sysroot's ld-musl is an
-// absolute symlink -- it retries by handing the binary to the musl loader
-// directly and says so, so a toolchain that only works that way is visibly
-// degraded instead of quietly passing.
+// runBinary executes a freshly built target binary. Dynamic native probes go
+// through the sysroot loader (runLoader) so host /etc/ld-musl-*.path cannot
+// participate. Foreign dynamic probes use qemu -L; if that cannot find the
+// interpreter, we retry via the loader and say so.
 func (h *harness) runBinary(ctx context.Context, step, dir, prog string) (stdout, degraded string, out []byte, argv []string, err error) {
-	argv = append(append([]string(nil), h.runPrefix...), prog)
+	argv = append(h.runArgv(dir, prog), prog)
 	stdout, out, err = h.execCapture(ctx, step+"-run", dir, argv, h.runEnv, h.opts.runTimeout)
 	if err == nil || len(h.runFallback) == 0 || !loaderMissing(out) {
 		return stdout, "", out, argv, err
@@ -278,6 +278,19 @@ func joinDetail(parts ...string) string {
 		}
 	}
 	return strings.Join(keep, " | ")
+}
+
+func (h *harness) runArgv(dir, prog string) []string {
+	if len(h.runLoader) > 0 {
+		name := prog
+		if !filepath.IsAbs(prog) {
+			name = filepath.Join(dir, filepath.Base(prog))
+		}
+		if info, err := ReadELF(name); err == nil && !info.Static {
+			return append([]string(nil), h.runLoader...)
+		}
+	}
+	return append([]string(nil), h.runPrefix...)
 }
 
 // loaderMissing recognises qemu failing to open the musl interpreter, e.g.
@@ -467,24 +480,32 @@ func (h *harness) mkdir(name string) string {
 // A non-zero exit is a normal outcome here (it becomes a failed Check), so
 // Runner.Output is used.
 func (h *harness) exec(ctx context.Context, step, dir string, argv []string, env map[string]string, timeout time.Duration) ([]byte, error) {
+	return h.execCmd(ctx, step, dir, argv, Cmd{EnvAdd: env}, timeout)
+}
+
+func (h *harness) execCmd(ctx context.Context, step, dir string, argv []string, c Cmd, timeout time.Duration) ([]byte, error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	return h.r.Output(ctx, Cmd{Name: step, Dir: dir, Args: argv, EnvAdd: env})
+	c.Name, c.Dir, c.Args = step, dir, argv
+	return h.r.Output(ctx, c)
 }
 
 // execCapture runs argv with stdout redirected to a file so the comparison
 // against Probe.Want sees pure stdout, while stderr still reaches the log.
+// The environment is replaced so a host LD_PRELOAD/LD_LIBRARY_PATH cannot
+// reach the sysroot loader.
 func (h *harness) execCapture(ctx context.Context, step, dir string, argv []string, env map[string]string, timeout time.Duration) (stdout string, combined []byte, err error) {
 	const outFile = "probe.stdout"
+	run := Cmd{Env: isolatedEnviron(env)}
 	if !haveShell() {
-		combined, err = h.exec(ctx, step, dir, argv, env, timeout)
+		combined, err = h.execCmd(ctx, step, dir, argv, run, timeout)
 		return string(combined), combined, err
 	}
 	sh := []string{shellPath, "-c", "exec " + shJoin(argv) + " > " + shQuote(outFile)}
-	combined, err = h.exec(ctx, step, dir, sh, env, timeout)
+	combined, err = h.execCmd(ctx, step, dir, sh, run, timeout)
 	b, rerr := os.ReadFile(filepath.Join(dir, outFile))
 	if rerr != nil && err == nil {
 		return "", combined, fmt.Errorf("cannot read captured stdout: %w", rerr)

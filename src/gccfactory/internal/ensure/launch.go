@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -147,7 +148,9 @@ func binfmtAdvice(t triple.Triple) string {
 
 // qemuLaunch returns a launcher that names qemuBin explicitly, or ok=false when
 // that file is not there. A dynamic binary also needs the sysroot holding its
-// loader, which qemu resolves through the host filesystem.
+// loader, which qemu resolves through the host filesystem. This is the foreign
+// -L route only. Same-arch verify must not use it: qemu -L loads our
+// interpreter and then the loader reads the host /etc/ld-musl-*.path.
 func qemuLaunch(qemuBin, sysroot string, static bool) (launchOpt, bool) {
 	if qemuBin == "" {
 		return launchOpt{}, false
@@ -163,6 +166,40 @@ func qemuLaunch(qemuBin, sysroot string, static bool) (launchOpt, bool) {
 		o.why += " -L " + sysroot
 	}
 	return o, true
+}
+
+// isolatedEnviron is the environment a target probe runs under. Every LD_*
+// and QEMU_LD_PREFIX from the host is dropped so Debian musl's path file,
+// LD_PRELOAD, and a leftover QEMU_LD_PREFIX cannot feed the loader host libs.
+func isolatedEnviron(extra map[string]string) []string {
+	out := make([]string, 0, 32)
+	for _, kv := range os.Environ() {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok || hijackEnv(k) {
+			continue
+		}
+		out = append(out, kv)
+	}
+	if extra == nil {
+		return out
+	}
+	keys := make([]string, 0, len(extra))
+	for k := range extra {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		out = append(out, k+"="+extra[k])
+	}
+	return out
+}
+
+func hijackEnv(k string) bool {
+	switch k {
+	case "QEMU_LD_PREFIX":
+		return true
+	}
+	return strings.HasPrefix(k, "LD_")
 }
 
 // chooseHostLaunch decides how this toolchain's own HOST binaries get run, by
@@ -206,23 +243,39 @@ func (h *harness) chooseHostLaunch(ctx context.Context, gcc, gxx string, host, t
 	return false
 }
 
-// setTargetRun configures how a freshly built TARGET binary is executed. qemu
-// is preferred here (unlike the host side) because `-L sysroot` is what makes a
-// dynamic target binary find its loader; when no qemu binary exists we exec the
-// binary directly and keep the sysroot's loader as the fallback, which is the
-// same trick without the emulator.
+// setTargetRun configures how a freshly built TARGET binary is executed.
+//
+// Same-arch dynamic probes invoke the sysroot's own musl loader with
+// --library-path <sysroot>/lib. musl then derives /etc/ld-musl-*.path from
+// argv[0] (inside the sysroot) and never opens the host path file — which is
+// how a Debian musl package used to steal C++ probes. Foreign probes still
+// use qemu -L: that qemu *does* prefix later opens, so /lib and /etc land
+// in the sysroot.
 func (h *harness) setTargetRun(ctx context.Context, qemuTarget, sysroot string, t triple.Triple) {
 	ld := LoaderPath(sysroot, t)
+	lib := filepath.Join(sysroot, "lib")
+
+	if isNative(t) {
+		if ld == "" || !h.canExec(ctx, ld) {
+			h.norun = true
+			h.rep.Failf("target-run-mode", "%s", binfmtAdvice(t))
+			return
+		}
+		h.runLoader = []string{ld, "--library-path", lib}
+		h.rep.Pass("target-run-mode", "%s binaries run via sysroot loader --library-path %s", t.Raw, lib)
+		return
+	}
+
 	if q, ok := qemuLaunch(qemuTarget, sysroot, false); ok {
 		h.runPrefix, h.runEnv = q.argv, q.env
 		if ld != "" {
-			h.runFallback = []string{qemuTarget, ld}
+			h.runFallback = append(append([]string(nil), q.argv...), ld, "--library-path", "/lib")
 		}
 		h.rep.Pass("target-run-mode", "%s binaries run via %s", t.Raw, q.why)
 		return
 	}
 	if ld != "" {
-		h.runFallback = []string{ld}
+		h.runFallback = []string{ld, "--library-path", "/lib"}
 	}
 	// The sysroot's musl loader is itself a TARGET ELF, so it is the one binary
 	// available to answer "can this kernel exec this architecture" before the

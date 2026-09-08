@@ -141,7 +141,8 @@ func (f *fakeRunner) Output(ctx context.Context, c Cmd) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("fake: no probe sources in %s", c.Dir)
 		}
-		if f.loaderBroken && strings.Contains(strings.Join(c.Args, " "), " -L ") {
+		if f.loaderBroken && strings.Contains(strings.Join(c.Args, " "), " -L ") &&
+			!strings.Contains(strings.Join(c.Args, " "), "--library-path") {
 			return []byte("qemu-" + f.target.QemuName() + ": Could not open '" +
 				f.target.DynamicLinker() + "': No such file or directory\n"), fakeExitErr{}
 		}
@@ -592,12 +593,11 @@ func TestLoaderFallbackIsUsedAndReported(t *testing.T) {
 	if degraded == 0 {
 		t.Fatal("no probe ran")
 	}
-	// The fallback invokes the loader directly, without -L.
 	var sawFallback bool
 	for _, c := range r.cmds {
 		joined := strings.Join(c.Args, " ")
 		if strings.Contains(joined, filepath.Join(Sysroot(f.prefix, target), "lib", "ld-musl-aarch64.so.1")) &&
-			!strings.Contains(joined, " -L ") {
+			strings.Contains(joined, "--library-path") {
 			sawFallback = true
 		}
 	}
