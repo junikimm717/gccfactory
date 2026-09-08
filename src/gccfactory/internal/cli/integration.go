@@ -71,7 +71,7 @@ type ensureRunner struct{ r *core.Runner }
 var _ ensure.Runner = ensureRunner{}
 
 func (a ensureRunner) toCore(c ensure.Cmd) core.Cmd {
-	return core.Cmd{Dir: c.Dir, EnvAdd: c.EnvAdd, Args: c.Args, Name: c.Name}
+	return core.Cmd{Dir: c.Dir, Env: c.Env, EnvAdd: c.EnvAdd, Args: c.Args, Name: c.Name}
 }
 
 func (a ensureRunner) Run(ctx context.Context, c ensure.Cmd) error {

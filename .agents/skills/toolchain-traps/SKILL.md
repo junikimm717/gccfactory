@@ -198,6 +198,42 @@ fails to run — which looks like a broken toolchain but isn't.
 you don't control, invoke the loader directly:
 `qemu-<arch>-static <sysroot>/lib/libc.so ./prog`.
 
+## `Error loading shared library libstdc++.so.6` on native-arch verify
+
+C probes pass, C++ dynamic probes fail with musl's "Error loading shared
+library libstdc++.so.6" (and libgcc_s.so.1). The libraries *are* in
+`<sysroot>/lib`. Static C++ probes are fine.
+
+**Cause.** The build machine has Debian/Ubuntu `musl` installed. That package
+drops `/lib/ld-musl-<arch>.so.1` and `/etc/ld-musl-<arch>.path` containing
+`/lib/<triple>` (e.g. `/lib/x86_64-linux-musl`). Same-arch `qemu-<arch>-static
+-L <sysroot>` does load our interpreter from the sysroot, but it does **not**
+prefix subsequent `open`s — host strace shows a raw
+`openat("/etc/ld-musl-x86_64.path")`. Our musl then searches the host path
+file's directories, which have libc and nothing else. C probes need no extra
+`.so` so they pass (and do test our libc, because the interpreter *is* libc).
+C++ probes need libstdc++ and die.
+
+Foreign-arch qemu translates every absolute open through `-L`, so
+`/etc/ld-musl-<target>.path` becomes `<sysroot>/etc/...` (absent) and the
+default `/lib` lands in the sysroot. Those targets are fine on the same box.
+
+**Triage.** `qemu-<arch>-static -strace -L <sysroot> ./probe` looking for
+`/lib/x86_64-linux-musl/libstdc++.so.6` instead of `/lib/libstdc++.so.6` is
+this, not a missing install. `ls /etc/ld-musl-*.path` confirms the hijack.
+
+**Fix.** Same-arch verify must not use `qemu -L ./probe` or `LD_LIBRARY_PATH`.
+`setTargetRun` invokes the sysroot's own musl loader
+(`<sysroot>/lib/libc.so --library-path <sysroot>/lib ./probe`). musl then
+derives `/etc/ld-musl-*.path` from argv[0] (inside the sysroot) and never
+opens the host path file. Probe runs also replace the environment so a host
+`LD_PRELOAD` / `LD_LIBRARY_PATH` cannot leak in. Foreign-arch qemu `-L` still
+prefixes later opens, so that route is unchanged.
+
+Do not "fix" this by deleting the host musl package or by changing where gcc
+installs libstdc++. Unprivileged user namespaces cannot hide `/etc` on this
+class of host (`uid_map` denied).
+
 ## `liblto_plugin.so` missing (static host tools)
 
 **Cause.** `CC="<H>-gcc -static --static"` makes libtool emit only

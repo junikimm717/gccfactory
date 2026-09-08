@@ -191,6 +191,9 @@ func (t Triple) ELF() (machine uint16, class, data byte, ok bool) {
 // QemuName is the qemu-user binary suffix, e.g. "x86_64" for qemu-x86_64.
 func (t Triple) QemuName() string { return specs[t.Raw].qemu }
 
+// LdsoArch is the musl loader suffix, e.g. "armhf" in ld-musl-armhf.so.1.
+func (t Triple) LdsoArch() string { return specs[t.Raw].ldso }
+
 // DynamicLinker is the absolute path (inside the sysroot) of musl's ld.so.
 func (t Triple) DynamicLinker() string {
 	return "/lib/ld-musl-" + specs[t.Raw].ldso + ".so.1"

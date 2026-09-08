@@ -17,9 +17,13 @@ type execRunner struct{ t *testing.T }
 func (e execRunner) Output(ctx context.Context, c Cmd) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, c.Args[0], c.Args[1:]...)
 	cmd.Dir = c.Dir
-	cmd.Env = os.Environ()
-	for k, v := range c.EnvAdd {
-		cmd.Env = append(cmd.Env, k+"="+v)
+	if c.Env != nil {
+		cmd.Env = c.Env
+	} else {
+		cmd.Env = os.Environ()
+		for k, v := range c.EnvAdd {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
 	}
 	return cmd.CombinedOutput()
 }

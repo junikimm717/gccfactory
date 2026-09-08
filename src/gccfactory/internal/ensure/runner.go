@@ -24,6 +24,10 @@ type Cmd struct {
 	Args []string
 	// EnvAdd is overlaid on the inherited environment.
 	EnvAdd map[string]string
+	// Env, if non-nil, replaces the environment (same as core.Cmd). Probe
+	// runs use this so a host LD_PRELOAD / LD_LIBRARY_PATH cannot hijack
+	// the sysroot loader.
+	Env []string
 }
 
 // Runner executes commands on the BUILD machine and logs them.

@@ -214,6 +214,14 @@ the host, not under `-L <sysroot>`. Debian's `qemu-user-static` package is
 the one that ships those names; Ubuntu's `qemu-user` / `qemu-user-binfmt`
 alone is not.
 
+**A host `musl` package hijacks native-arch C++ probes.** Debian writes
+`/etc/ld-musl-<arch>.path` pointing at `/lib/<triple>`. Same-arch
+`qemu -L <sysroot>` loads our interpreter but does not prefix later opens, so
+libstdc++ is searched on the host (which has no copy) and verify dies after
+every C probe passed. Verify must not consult host libc: same-arch dynamic
+probes run `<sysroot>/lib/libc.so --library-path <sysroot>/lib ./probe` with
+`LD_*` stripped; see `toolchain-traps`.
+
 **The probe suite** (`internal/ensure/probes/*.c`, embedded via `go:embed`).
 Each probe is a self-checking program: compile it, assert the ELF identity of
 the result, run it, require its stdout to equal `Probe.Want` exactly.
