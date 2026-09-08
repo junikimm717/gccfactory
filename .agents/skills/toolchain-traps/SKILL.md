@@ -234,6 +234,22 @@ Do not "fix" this by deleting the host musl package or by changing where gcc
 installs libstdc++. Unprivileged user namespaces cannot hide `/etc` on this
 class of host (`uid_map` denied).
 
+**Alpine (and any musl host with g++) can lie.** Debian+musl fails C++ because
+the hijack path has libc and no libstdc++. Alpine's default search is
+`/lib:/usr/local/lib:/usr/lib` and `/usr/lib/libstdc++.so.6` exists, so a
+plain exec of our hello++ prints `OK hello++` using Alpine's C++ runtime
+(`strace` shows `open("/usr/lib/libstdc++.so.6")`). Plant a ctor-abort
+`libstdc++.so.6` in `/lib` (or `/lib/<triple>` on Debian) before trusting a
+green verify. Same-arch `qemu -L` on Alpine 3.21 *does* prefix `/lib` into
+the sysroot — the silent pass is plain exec / the host loader, not qemu.
+
+**`cross_<T>` gcc is a BUILD glibc binary.** It will not even start on Alpine
+(missing `/lib64/ld-linux-x86-64.so.2`) or on Debian bookworm if BUILD was
+Ubuntu 24.04 (`GLIBC_2.38 not found`). The portable proof is `canadian`:
+those host tools are static musl. Injected `LD_PRELOAD` is stripped for
+target probes; it still hits the dynamic *cross* gcc, which is the BUILD
+compiler, not the artifact.
+
 ## `liblto_plugin.so` missing (static host tools)
 
 **Cause.** `CC="<H>-gcc -static --static"` makes libtool emit only
