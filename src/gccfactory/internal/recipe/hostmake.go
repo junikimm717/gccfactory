@@ -89,7 +89,7 @@ func (j *hostMake) Build(ctx context.Context, e *core.Env, r *core.Runner, work,
 	}
 
 	b.step("verify")
-	if skipVerify() {
+	if SkipVerify() {
 		b.e.Log.Warn("skipping verification", "reason", "GCCF_SKIP_VERIFY set", "job", j.Slug())
 		return nil
 	}

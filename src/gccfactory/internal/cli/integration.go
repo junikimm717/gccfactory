@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/core"
@@ -94,18 +95,40 @@ func checkCanadian(ctx context.Context, r *core.Runner, work, prefix string, h, 
 	return ensure.CanadianToolchain(ctx, ensureRunner{r}, work, prefix, h, t, qemuHost, qemuTarget)
 }
 
-// --qemu-dir may be given either as a directory (/usr/bin) or as a path
-// template containing one %s (/opt/qemu/bin/qemu-%s), so a non-Debian layout
-// needs no code change. When neither names an existing binary we hand ensure
-// the best guess, which then reports a precise "tried ..." failure.
+// Directory form always names qemu-<arch>-static. qemu-user (no -static) plus
+// binfmt_misc will exec a dynamic target binary against the host's
+// /lib/ld-musl-*.so.1, which is how a "working" doctor used to lie.
 func qemuPath(dirOrTemplate string, t triple.Triple) string {
 	if strings.Contains(dirOrTemplate, "%s") {
 		return fmt.Sprintf(dirOrTemplate, t.QemuName())
 	}
-	if p, err := ensure.QemuFor(t, []string{dirOrTemplate}); err == nil {
-		return p
-	}
 	return filepath.Join(dirOrTemplate, "qemu-"+t.QemuName()+"-static")
+}
+
+func missingStaticQemu(dirOrTemplate string, ts []triple.Triple) []string {
+	seen := map[string]bool{}
+	var missing []string
+	for _, t := range ts {
+		p := qemuPath(dirOrTemplate, t)
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		st, err := os.Stat(p)
+		if err != nil || st.IsDir() || st.Mode()&0o111 == 0 {
+			missing = append(missing, p)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+func staticQemuErr(missing []string) error {
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("missing qemu-user-static binaries:\n  %s\ninstall qemu-user-static (Debian/Ubuntu: apt install qemu-user-static).\nqemu-user + binfmt_misc is not enough: verify runs qemu-<arch>-static -L <sysroot>",
+		strings.Join(missing, "\n  "))
 }
 
 // qemuTemplate is what we store in core.Env.QemuHost/QemuTarget: a printf

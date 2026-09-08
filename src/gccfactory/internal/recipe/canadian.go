@@ -360,7 +360,7 @@ func (b *builder) stripHost(ctx context.Context) error {
 // verifyCanadian is the real proof: the binaries are H ELFs, they run under
 // qemu-H to compile the probe suite for T, and the results run under qemu-T.
 func (b *builder) verifyCanadian(ctx context.Context) error {
-	if skipVerify() {
+	if SkipVerify() {
 		b.e.Log.Warn("skipping verification", "reason", "GCCF_SKIP_VERIFY set", "job", b.cfg.Host.Raw+"->"+b.cfg.Target.Raw)
 		return nil
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/core"
+	"github.com/junikimm717/gccfactory/src/gccfactory/internal/recipe"
 	"github.com/junikimm717/gccfactory/src/gccfactory/internal/triple"
 )
 
@@ -66,6 +67,10 @@ FLAGS
                    number from another machine.
   --dry-run        print the plan (slug, key, state) and exit; touches nothing
   --verify         after building, run the full ensure suite on each toolchain
+                   again. Each job already verifies before it publishes, so a
+                   default build needs qemu-<arch>-static the same way ` + "`verify`" + `
+                   does. GCCF_SKIP_VERIFY=1 is the only way to compile without
+                   that (and ` + "`--dry-run`" + ` never needs it).
   --keep-work      keep dist/work/<slug>.* on success so ` + "`gccfactory shell`" + `
                    can drop you into a finished build tree
 
@@ -118,6 +123,11 @@ func runBuild(g *Global, args []string) error {
 	warnUnroutable(os.Stderr, g, hosts, targets)
 	if *dryRun {
 		return printPlan(e, roots)
+	}
+	if !recipe.SkipVerify() || *doVerify {
+		if err := staticQemuErr(missingStaticQemu(g.QemuDir, append(append([]triple.Triple{}, hosts...), targets...))); err != nil {
+			return err
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "%s %s  (workers=%d, -j%d)\n",

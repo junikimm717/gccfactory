@@ -24,7 +24,10 @@ confusingly:
 - **machine / class / data** — the ELF identity `ensure.ExpectELF` enforces.
   `class` 1 = ELF32, 2 = ELF64; `data` 1 = LE, 2 = BE.
 - **qemu** — the qemu-user suffix, which is *not* always the arch:
-  `powerpc64` → `ppc64`, `powerpc64le` → `ppc64le`.
+  `powerpc64` → `ppc64`, `powerpc64le` → `ppc64le`. If the suffix is new,
+  add it to `qemu_static_names` in `src/gccf`; `TestShimQemuStaticNamesMatchTriples`
+  fails if you forget. The shim requires `qemu-<suffix>-static`, not the
+  non-static `qemu-user` name.
 - **ldso** — musl's loader name, giving `/lib/ld-musl-<ldso>.so.1`. Derive it
   from `LDSO_ARCH` in `musl/arch/<arch>/reloc.h`, and mind the ABI suffixes:
   riscv and arm append a float suffix (`-sf`, `-sp`) for soft/single float, so

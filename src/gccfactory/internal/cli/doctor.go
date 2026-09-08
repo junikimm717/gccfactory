@@ -29,16 +29,21 @@ otherwise hit hours later, at the verification step.
     ` + "`qemu only`" + `     a qemu-user binary exists, but the kernel has no registration
     ` + "`none`" + `          nothing here can execute them
 
+WHY qemu-user-static IS REQUIRED
+  A dynamic target probe has PT_INTERP /lib/ld-musl-<arch>.so.1. Running it
+  via binfmt_misc or a plain ` + "`qemu-<arch>`" + ` looks for that path on the host
+  and dies. verify launches ` + "`qemu-<arch>-static -L <sysroot>`" + `, so the
+  -static binary has to exist even when binfmt_misc already works.
+
 WHY qemu ALONE IS NOT ENOUGH FOR A HOST
   gcc is not one process. The driver forks cc1, as and collect2, and a
   qemu-user launcher only ever covers the process it was handed. Nesting works
   only when the kernel itself routes a foreign exec, which means binfmt_misc.
-  So a HOST architecture needs ` + "`native`" + ` or ` + "`binfmt_misc`" + `, while a TARGET
-  architecture -- whose binaries are only ever run as leaves -- is fine under
-  ` + "`qemu only`" + `.
+  So a HOST architecture needs ` + "`native`" + ` or ` + "`binfmt_misc`" + ` in addition to
+  the -static binary used to run TARGET probes.
 
-This reads /proc/sys/fs/binfmt_misc and looks for qemu binaries; it does not
-need dist/ and builds nothing.`,
+This reads /proc/sys/fs/binfmt_misc and looks for qemu-<arch>-static; it does
+not need dist/ and builds nothing.`,
 	Run: runDoctor,
 }
 
@@ -94,15 +99,21 @@ func runDoctor(g *Global, args []string) error {
 	fmt.Printf("%s %s\n\n", bold("exec routes:"), dim("how this machine runs binaries for each architecture"))
 	tbl := newTable("ARCH", "ROLE", "ROUTE")
 	var broken []string
+	var wantStatic []triple.Triple
 	for _, n := range names {
 		t, err := triple.Parse(n)
 		if err != nil {
 			return finish("doctor", err)
 		}
+		wantStatic = append(wantStatic, t)
 		r := roles[n]
-		route, detail := ensure.ExecRouteOf(t, []string{qemuPath(g.QemuDir, t)})
+		static := qemuPath(g.QemuDir, t)
+		route, detail := ensure.ExecRouteOf(t, []string{static})
 		var label string
 		switch {
+		case len(missingStaticQemu(g.QemuDir, []triple.Triple{t})) > 0:
+			label, broken = red("no qemu-static"), append(broken, n)
+			detail = static + " is required for verify (qemu -L <sysroot>)"
 		case route == ensure.RouteNone:
 			label, broken = red(route.String()), append(broken, n)
 		case r.needsFork() && !route.Nested():
@@ -120,8 +131,12 @@ func runDoctor(g *Global, args []string) error {
 		fmt.Printf("%s all %d architectures can be executed here\n", green("ok"), len(names))
 		return nil
 	}
+	remedy := ensure.BinfmtRemedy(broken)
+	if miss := missingStaticQemu(g.QemuDir, wantStatic); len(miss) > 0 {
+		remedy = staticQemuErr(miss).Error()
+	}
 	return finish("doctor", fmt.Errorf("%d of %d architectures cannot be executed here: %s\n\n%s",
-		len(broken), len(names), strings.Join(broken, ", "), ensure.BinfmtRemedy(broken)))
+		len(broken), len(names), strings.Join(broken, ", "), remedy))
 }
 
 // warnUnroutable says up front that some of this matrix will not be verifiable

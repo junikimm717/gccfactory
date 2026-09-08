@@ -204,6 +204,16 @@ machine with a qemu binary but no `binfmt_misc` registration can start the gcc
 driver and nothing under it. `gccf doctor` reports the route per architecture;
 see `toolchain-traps` for the failure shapes.
 
+**qemu-user-static is required for verification, not qemu-user.** A default
+`build` verifies each job before publish, so the shim hard-stops `build` and
+`verify` unless every `qemu-<arch>-static` exists under `--qemu-dir`. `--dry-run`
+and `GCCF_SKIP_VERIFY=1` skip that gate. `qemu-user` + `binfmt_misc` looks like
+a working route and then every dynamic probe dies with
+`Could not open '/lib/ld-musl-<arch>.so.1'` — the kernel opened PT_INTERP on
+the host, not under `-L <sysroot>`. Debian's `qemu-user-static` package is
+the one that ships those names; Ubuntu's `qemu-user` / `qemu-user-binfmt`
+alone is not.
+
 **The probe suite** (`internal/ensure/probes/*.c`, embedded via `go:embed`).
 Each probe is a self-checking program: compile it, assert the ELF identity of
 the result, run it, require its stdout to equal `Probe.Want` exactly.

@@ -254,11 +254,11 @@ func addSources(in map[string]string, pkgs ...string) {
 
 func joinFlags(f []string) string { return strings.Join(f, " ") }
 
-// skipVerify is the escape hatch for bisecting a broken pipeline: set
+// SkipVerify is the escape hatch for bisecting a broken pipeline: set
 // GCCF_SKIP_VERIFY=1 to publish an artifact without proving it works. It is
 // deliberately an environment variable and not a flag, because nobody should
 // reach for it by accident.
-func skipVerify() bool {
+func SkipVerify() bool {
 	v := os.Getenv("GCCF_SKIP_VERIFY")
 	return v != "" && v != "0"
 }
