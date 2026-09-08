@@ -257,7 +257,7 @@ func (b *builder) installCCSymlink(ctx context.Context) error {
 // verifyCross proves the toolchain works before it is published: every binary
 // is a BUILD ELF, and the probe suite compiles for T and runs under qemu.
 func (b *builder) verifyCross(ctx context.Context) error {
-	if skipVerify() {
+	if SkipVerify() {
 		b.e.Log.Warn("skipping verification", "reason", "GCCF_SKIP_VERIFY set", "job", b.cfg.Target.Raw)
 		return nil
 	}

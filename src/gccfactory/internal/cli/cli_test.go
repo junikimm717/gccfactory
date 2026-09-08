@@ -5,7 +5,9 @@ import (
 	"flag"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -347,24 +349,44 @@ func TestQemuPathTemplateUsesQemuName(t *testing.T) {
 	}
 }
 
-func TestQemuPathDirFormFindsInstalledBinary(t *testing.T) {
+func TestQemuPathDirFormIsAlwaysStatic(t *testing.T) {
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "qemu-ppc64le")
-	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	nonStatic := filepath.Join(dir, "qemu-ppc64le")
+	if err := os.WriteFile(nonStatic, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	got := qemuPath(dir, triple.MustParse("powerpc64le-linux-musl"))
-	if got != bin {
-		t.Errorf("dir form: got %q, want the binary that exists at %q", got, bin)
+	if want := filepath.Join(dir, "qemu-ppc64le-static"); got != want {
+		t.Errorf("dir form: got %q, want %q (the non-static binary must be ignored)", got, want)
 	}
 }
 
-func TestQemuPathFallsBackToStaticGuess(t *testing.T) {
+func TestMissingStaticQemuNamesEveryArch(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("PATH", t.TempDir()) // QemuFor searches PATH last; without this it finds the system qemu
-	got := qemuPath(dir, triple.MustParse("powerpc64le-linux-musl"))
-	if want := filepath.Join(dir, "qemu-ppc64le-static"); got != want {
-		t.Errorf("fallback: got %q, want %q", got, want)
+	ts := make([]triple.Triple, 0, len(triple.Known))
+	for _, raw := range triple.Known {
+		ts = append(ts, triple.MustParse(raw))
+	}
+	missing := missingStaticQemu(dir, ts)
+	if len(missing) != 10 {
+		t.Fatalf("got %d missing, want 10 unique qemu names: %v", len(missing), missing)
+	}
+	joined := strings.Join(missing, "\n")
+	for _, n := range []string{"qemu-ppc64-static", "qemu-ppc64le-static", "qemu-x86_64-static", "qemu-arm-static"} {
+		if !strings.Contains(joined, n) {
+			t.Errorf("missing list must contain %s:\n%s", n, joined)
+		}
+	}
+	if err := staticQemuErr(missing); err == nil || !strings.Contains(err.Error(), "qemu-user-static") {
+		t.Fatalf("error must name the package:\n%v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "qemu-ppc64-static"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	missing = missingStaticQemu(dir, []triple.Triple{triple.MustParse("powerpc64-linux-musl")})
+	if len(missing) != 0 {
+		t.Fatalf("present -static binary must satisfy the check, got %v", missing)
 	}
 }
 
@@ -375,5 +397,89 @@ func mustWrite(t *testing.T, path, body string) {
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestShimQemuStaticNamesMatchTriples(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "src/gccf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`qemu_static_names=\(([^)]+)\)`).FindSubmatch(body)
+	if m == nil {
+		t.Fatal("src/gccf must declare qemu_static_names=(...)")
+	}
+	var want []string
+	seen := map[string]bool{}
+	for _, raw := range triple.Known {
+		n := triple.MustParse(raw).QemuName()
+		if !seen[n] {
+			seen[n] = true
+			want = append(want, n)
+		}
+	}
+	got := strings.Fields(string(m[1]))
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("src/gccf qemu_static_names drifted from triple.QemuName()\n  shim: %v\n  go:   %v", got, want)
+	}
+}
+
+func TestShimStopsWithoutQemuStatic(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	dist := t.TempDir()
+	cmd := exec.Command(filepath.Join(root, "src/gccf"), "--qemu-dir", empty,
+		"build", "--host", "x86_64-linux-musl", "--target", "x86_64-linux-musl")
+	cmd.Env = append(os.Environ(), "GCCF_DIST="+dist, "GCCF_QEMU_DIR="+empty)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected a hard stop, got success:\n%s", out)
+	}
+	s := string(out)
+	for _, frag := range []string{"qemu-ppc64-static", "qemu-user-static", "binfmt_misc is not a substitute"} {
+		if !strings.Contains(s, frag) {
+			t.Errorf("missing %q in:\n%s", frag, s)
+		}
+	}
+}
+
+func TestShimDryRunWorksWithoutQemuStatic(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	dist := t.TempDir()
+	cmd := exec.Command(filepath.Join(root, "src/gccf"), "--qemu-dir", empty,
+		"build", "--dry-run", "--host", "x86_64-linux-musl", "--target", "x86_64-linux-musl")
+	cmd.Env = append(os.Environ(), "GCCF_DIST="+dist, "GCCF_QEMU_DIR="+empty)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("dry-run must not require qemu-user-static: %v\n%s", err, out)
+	}
+}
+
+func TestShimHelpWorksWithoutQemuStatic(t *testing.T) {
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := t.TempDir()
+	dist := t.TempDir()
+	cmd := exec.Command(filepath.Join(root, "src/gccf"), "--qemu-dir", empty, "help")
+	cmd.Env = append(os.Environ(), "GCCF_DIST="+dist, "GCCF_QEMU_DIR="+empty)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("help must still run without qemu-user-static: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "gccfactory") {
+		t.Fatalf("help output:\n%s", out)
 	}
 }

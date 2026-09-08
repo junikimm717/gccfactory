@@ -110,6 +110,9 @@ func runVerify(g *Global, args []string) error {
 	if targets == nil {
 		targets = allTriples()
 	}
+	if err := staticQemuErr(missingStaticQemu(g.QemuDir, append(append([]triple.Triple{}, hosts...), targets...))); err != nil {
+		return err
+	}
 
 	v := &verifier{e: e, ctx: ctx}
 	if *native {

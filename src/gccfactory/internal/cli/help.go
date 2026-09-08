@@ -40,11 +40,11 @@ func tripleHelp() string {
 const globalHelp = `Global flags (accepted before or after the command):
   --dist DIR       build tree + artifact root. Default <repo>/dist, or $GCCF_DIST.
                    The ./src/gccf shim always sets this for you.
-  --qemu-dir DIR   where qemu-<arch>-static lives (default /usr/bin). May instead
-                   be a template containing %s, e.g. /opt/qemu/bin/qemu-%s.
-                   Only a fallback: foreign binaries are exec'd directly when
-                   the kernel can route them. Run "gccfactory doctor" to see
-                   which route each architecture actually takes here.
+  --qemu-dir DIR   directory of qemu-<arch>-static binaries (default /usr/bin).
+                   May be a template containing %s, e.g. /opt/qemu/bin/qemu-%s-static.
+                   Required. qemu-user + binfmt_misc is not enough: a dynamic
+                   target probe must run under qemu -L <sysroot>, or it looks
+                   for /lib/ld-musl-<arch>.so.1 on the host and dies.
   --color WHEN     auto|always|never (default auto: color only on a terminal).
   -v, --verbose    mirror every command's output to the terminal as it runs.
                    Without it, output still goes to dist/logs/ in full.`

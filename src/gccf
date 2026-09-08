@@ -45,10 +45,77 @@ if (( needs_build )); then
   ( cd "$ROOT/src/gccfactory" && go build -o "$BIN" . )
 fi
 
-# qemu-user-static lives in /usr/bin on debian; gccfactory appends -<arch>-static.
+# Must match unique triple.QemuName() values. A test fails if they drift.
+qemu_static_names=(aarch64 arm i386 mips64 ppc64 ppc64le riscv32 riscv64 s390x x86_64)
+
 QEMU_DIR=${GCCF_QEMU_DIR:-/usr/bin}
-[[ -x $QEMU_DIR/qemu-x86_64-static ]] || \
-  echo "gccf: warning: no $QEMU_DIR/qemu-x86_64-static; 'verify' will not be able to run host binaries" >&2
+subcommand=
+want_help=0
+dry_run=0
+build_verify=0
+i=0
+args=("$@")
+while (( i < ${#args[@]} )); do
+  case ${args[i]} in
+    --qemu-dir)
+      QEMU_DIR=${args[i+1]:-}
+      i=$((i+2)) ;;
+    --qemu-dir=*)
+      QEMU_DIR=${args[i]#--qemu-dir=}
+      i=$((i+1)) ;;
+    --dry-run)
+      dry_run=1
+      i=$((i+1)) ;;
+    --verify)
+      build_verify=1
+      i=$((i+1)) ;;
+    -h|--help|help)
+      want_help=1
+      i=$((i+1)) ;;
+    -*)
+      i=$((i+1)) ;;
+    *)
+      [[ -z $subcommand ]] && subcommand=${args[i]}
+      i=$((i+1)) ;;
+  esac
+done
+
+# The constraint is verification, not compilation. A default build verifies
+# each job before publish, so it needs qemu-<arch>-static too.
+need_qemu=0
+if [[ $want_help -eq 0 ]]; then
+  case $subcommand in
+    verify) need_qemu=1 ;;
+    build)
+      if [[ $dry_run -eq 0 ]]; then
+        if [[ $build_verify -eq 1 || ${GCCF_SKIP_VERIFY:-} == "" || ${GCCF_SKIP_VERIFY} == 0 ]]; then
+          need_qemu=1
+        fi
+      fi
+      ;;
+  esac
+fi
+
+if (( need_qemu )); then
+  missing=()
+  for n in "${qemu_static_names[@]}"; do
+    if [[ $QEMU_DIR == *%s* ]]; then
+      p=${QEMU_DIR//%s/$n}
+    else
+      p=$QEMU_DIR/qemu-$n-static
+    fi
+    [[ -x $p ]] || missing+=("$p")
+  done
+  if (( ${#missing[@]} )); then
+    echo "gccf: missing qemu-user-static binaries:" >&2
+    printf '      %s\n' "${missing[@]}" >&2
+    echo "      install qemu-user-static (Debian/Ubuntu: apt install qemu-user-static)" >&2
+    echo "      or point GCCF_QEMU_DIR / --qemu-dir at a directory that holds them." >&2
+    echo "      qemu-user + binfmt_misc is not a substitute: verify needs" >&2
+    echo "      qemu-<arch>-static -L <sysroot>, and the non-static name is ignored." >&2
+    exit 1
+  fi
+fi
 
 # GCCF_JOBS / GCCF_WORKERS are read by gccfactory itself as flag defaults, so
 # they just need to be in the environment; explicit -j/--workers still win.
