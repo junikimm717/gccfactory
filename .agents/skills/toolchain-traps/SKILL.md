@@ -598,7 +598,7 @@ does nothing and control falls into the `for(;;)` that follows `CRTJMP`:
 
 **Fix.** The `"a"` constraint — s390's address-register class, GPRs except
 `%r0`. This is what current musl upstream already has;
-`patches/musl-1.2.5/0003-s390x-crtjmp-address-register.diff` backports it.
+`patches/musl-1.2.5/s390x/0003-crtjmp-address-register.diff` backports it.
 s390x is the only affected arch: every other `CRTJMP` either uses a
 non-allocatable zero register or has no such rule.
 
@@ -618,6 +618,31 @@ get the file offset, then `objdump -d --start-address=`.
 **Generalise:** a gcc bump can change *register allocation* inside inline asm
 whose constraints were always too loose. The symptom is a hang, not a
 diagnostic, and it will look like flaky infrastructure.
+
+## s390x: `sigsetjmp(buf, 0)` SIGILLs/SIGSEGVs, only in big static binaries
+
+**Symptom.** A large static s390x program (static CPython, readline completion)
+dies in `sigsetjmp(b, 0)`. Small programs are fine, and so is `sigsetjmp(b, 1)`. qemu
+version doesn't matter.
+
+**Cause.** musl's `src/signal/s390x/sigsetjmp.s` does `jz ___setjmp`, which is
+`brc`, a 16-bit halfword branch (`R_390_PC16DBL`, ±64 KiB), into a *different*
+object. binutils 2.44's s390 howto checks overflow with
+`complain_overflow_bitfield`, which accepts anything that fits as either signed
+or unsigned. So a 64–128 KiB distance **wraps silently**. Past 128 KiB you
+do get `relocation truncated to fit`. Check with `objdump -d`: the `je` target
+is off by exactly 0x20000 from `nm`'s `___setjmp`.
+
+**Fix.** `patches/musl-1.2.5/s390x/0006-sigsetjmp-long-branch.diff`: `jgz`
+(`brcl`, 32-bit). All other musl `.s` on the 11 proven targets were audited:
+no other short branch crosses an object (`__cp_cancel` branches are
+same-file, and x86 `jae __memcpy_fwd` is relaxed to rel32 by gas).
+
+**Probe.** `sigsetjmp` in `internal/ensure` forces the layout. `main.c` pulls
+`setjmp.o` via an early `-lc`, then a 0x18000-byte pad object, then the
+`sigsetjmp` caller (`Probe.LinkTail`), so the trailing `-lc` lands
+`sigsetjmp.o` 96 KiB later. If the pad grows past 128 KiB, the probe turns into
+a link error and no longer reproduces the silent case.
 
 ## riscv32: threaded programs corrupt every 64-bit `va_arg`, but only off the main thread
 
