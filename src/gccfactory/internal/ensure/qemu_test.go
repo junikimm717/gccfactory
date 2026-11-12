@@ -121,7 +121,7 @@ func TestCrossToolchainMatrix(t *testing.T) {
 			probes++
 		}
 	}
-	if probes != 22 { // 10 probes x (dynamic+static) + dlopen and static-pie, one cell each
+	if probes != 24 { // 11 probes x (dynamic+static) + dlopen and static-pie, one cell each
 		t.Fatalf("ran %d probe cells\n%s", probes, rep)
 	}
 	// 32-bit targets must link libatomic for the 64-bit atomics probe.

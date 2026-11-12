@@ -37,6 +37,9 @@ type Probe struct {
 	// NoInterp marks a probe whose output has no PT_INTERP despite not being
 	// built with -static, i.e. -static-pie.
 	NoInterp bool
+	// LinkTail sources go after the flags, so an ExtraCC "-lc" pulls libc
+	// members in ahead of them and the probe controls the static layout.
+	LinkTail []string
 }
 
 func (p Probe) Flags(t triple.Triple) []string {
@@ -55,7 +58,7 @@ func (p Probe) Write(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	for _, f := range p.Files {
+	for _, f := range p.Sources() {
 		b, err := p.Source(f)
 		if err != nil {
 			return fmt.Errorf("probe %s: %w", p.Name, err)
@@ -65,6 +68,10 @@ func (p Probe) Write(dir string) error {
 		}
 	}
 	return nil
+}
+
+func (p Probe) Sources() []string {
+	return append(append([]string(nil), p.Files...), p.LinkTail...)
 }
 
 func (p Probe) SharedSources() (lib, main []string) {
@@ -166,6 +173,12 @@ func Probes() []Probe {
 			Name: "dlopen", Files: []string{"dlopen.c", "libprobe.c"}, Lang: "c",
 			Shared: true, ExtraCC: []string{"-ldl"},
 			Want: "name=libprobe\nadd=42\nadd=0\ncalls=2\nmissing=null\nOK dlopen\n",
+		},
+		{
+			// Pads ___setjmp >64 KiB from __sigsetjmp: s390x musl's 16-bit jz there wraps silently (issue #16).
+			Name: "sigsetjmp", Files: []string{"sigjmp.c"}, Lang: "c", Static: true,
+			ExtraCC: []string{"-lc"}, LinkTail: []string{"sigjmppad.c", "sigjmpfar.c"},
+			Want: "setjmp=2\nnosave=72 blocked=1\nsave=72 blocked=0\nOK sigsetjmp\n",
 		},
 		{
 			Name: "static-pie", Files: []string{"staticpie.c"}, Lang: "c",

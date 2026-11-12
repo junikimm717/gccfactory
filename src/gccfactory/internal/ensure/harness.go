@@ -203,6 +203,7 @@ func (h *harness) probe(ctx context.Context, p Probe, t triple.Triple, opt strin
 	argv = append(argv, mains...)
 	argv = append(argv, "-o", "probe")
 	argv = append(argv, p.Flags(t)...)
+	argv = append(argv, p.LinkTail...)
 
 	out, err := h.exec(ctx, step, dir, argv, h.env, h.opts.compileTimeout)
 	if err != nil {

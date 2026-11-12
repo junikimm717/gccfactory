@@ -62,7 +62,7 @@ func TestProbeSourcesParse(t *testing.T) {
 		if err := p.Write(dir); err != nil {
 			t.Fatal(err)
 		}
-		for _, f := range p.Files {
+		for _, f := range p.Sources() {
 			args := []string{"-fsyntax-only", "-Wall", "-Wextra"}
 			tool := cc
 			if p.Lang == "c++" {
